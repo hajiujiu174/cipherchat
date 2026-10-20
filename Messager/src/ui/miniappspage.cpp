@@ -4,6 +4,7 @@
 #include "scientificcalculator.h"
 #include "gomokupage.h"
 #include "services/chatservice.h"
+#include "services/gomokuwire.h"
 #include <QComboBox>
 #include <QCryptographicHash>
 #include <QDesktopServices>
@@ -34,7 +35,9 @@ const App apps[] = {{"notes", "便签", "随手记录想法，内容自动保存
                     {"todos", "待办清单", "安排今天要做的事，逐项勾选完成。", "users"},
                     {"calculator", "科学计算器", "三角函数、对数、幂运算与 DEG / RAD 模式。", "apps"},
                     {"web", "网页应用", "添加网页地址，在系统浏览器中打开。", "apps"},
-                    {"gomoku", "双人五子棋", "创建在线房间，发送消息邀请好友一起对弈。", "apps"}};
+                    {"gomoku", "双人五子棋", "创建在线房间，发送消息邀请好友一起对弈。", "apps"},
+                    {"connectfour", "四子棋", "点击一列落子，横竖斜连成四子；邀请好友在线对战。", "apps"},
+                    {"reversi", "黑白棋", "夹住并翻转对方棋子，支持落点提示、自动跳过和在线邀请。", "apps"}};
 
 } // namespace
 
@@ -204,8 +207,17 @@ MiniAppsPage::MiniAppsPage(ChatService* service, QWidget* parent) : QWidget(pare
     makeApp("双人五子棋", "和好友下一局 · 通过好友消息同步棋盘", &gomoku);
     gomoku->setSpacing(10);
     m_gomoku=new GomokuPage(service);gomoku->addWidget(m_gomoku);
+    m_gamePages["gomoku"]=m_gomoku;
     connect(m_gomoku,&GomokuPage::activated,this,[this]{openApp("gomoku");});
     connect(m_gomoku,&GomokuPage::chatRequested,this,&MiniAppsPage::chatRequested);
+    for(const auto& id:QStringList{"connectfour","reversi"}) {
+        QVBoxLayout* layout;
+        makeApp(GomokuWire::title(id),"好友在线对战 · 创建房间，发送聊天邀请",&layout);
+        auto* page=new GomokuPage(service,nullptr,id);
+        layout->addWidget(page);m_gamePages[id]=page;
+        connect(page,&GomokuPage::activated,this,[this,id]{openApp(id);});
+        connect(page,&GomokuPage::chatRequested,this,&MiniAppsPage::chatRequested);
+    }
     connect(m_search, &QLineEdit::textChanged, this, &MiniAppsPage::refreshCatalog);
     connect(m_filter, &QComboBox::currentIndexChanged, this, &MiniAppsPage::refreshCatalog);
     connect(service, &ChatService::sessionChanged, this, &MiniAppsPage::updateScope);
@@ -321,7 +333,7 @@ void MiniAppsPage::openApp(const QString& id) {
             save();
             refreshCatalog();
             m_stack->setCurrentIndex(i + 1);
-            if(id=="gomoku")m_status->setText("在线对弈通过 CipherChat 好友消息同步");
+            if(m_gamePages.contains(id))m_status->setText("在线对弈通过 CipherChat 好友消息同步 · 双方需使用支持该游戏的新版客户端");
             if (i == 0)
                 m_note->setFocus();
             else if (i == 1)
@@ -334,7 +346,11 @@ void MiniAppsPage::openApp(const QString& id) {
         }
 }
 void MiniAppsPage::openGomokuInvitation(const Message& message) {
-    openApp("gomoku");m_gomoku->openInvitation(message);
+    const auto o=GomokuWire::decode(message.text);
+    if(o.isEmpty() || o["type"]!="invite")return;
+    const auto id=GomokuWire::gameId(o);
+    if(!m_gamePages.contains(id))return;
+    openApp(id);m_gamePages[id]->openInvitation(message);
 }
 void MiniAppsPage::updateTodoCount() {
     int done = 0;

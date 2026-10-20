@@ -28,7 +28,7 @@ int main(int argc, char** argv) {
     QApplication app(argc, argv);
     QCoreApplication::setOrganizationName("MessagerPrototype");
     QCoreApplication::setApplicationName("Messager");
-    QCoreApplication::setApplicationVersion("0.3.15");
+    QCoreApplication::setApplicationVersion("0.3.16.1");
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QCommandLineParser parser;
     parser.setApplicationDescription("CipherChat · Messager 桌面界面");

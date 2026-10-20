@@ -8,7 +8,7 @@ namespace Messager {
 class GomokuBoard final : public QWidget {
     Q_OBJECT
   public:
-    explicit GomokuBoard(QWidget* parent = nullptr);
+    explicit GomokuBoard(QWidget* parent = nullptr, const QString& game = "gomoku");
     void setRoom(const GomokuRoom& room, bool canMove);
     QPoint cellCenter(int x, int y) const;
     QSize sizeHint() const override {
@@ -29,7 +29,7 @@ class GomokuBoard final : public QWidget {
 class GomokuPage final : public QWidget {
     Q_OBJECT
   public:
-    explicit GomokuPage(ChatService* service, QWidget* parent = nullptr);
+    explicit GomokuPage(ChatService* service, QWidget* parent = nullptr, const QString& game = "gomoku");
     GomokuController* controller() const {
         return m_game;
     }
@@ -47,6 +47,6 @@ class GomokuPage final : public QWidget {
     QComboBox *m_friends, *m_rooms;
     QLabel *m_status, *m_players, *m_error;
     QPushButton *m_create, *m_join, *m_leave, *m_sync, *m_chat;
-    QString m_selected;
+    QString m_selected, m_gameId;
 };
 } // namespace Messager

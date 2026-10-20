@@ -338,7 +338,7 @@ MessageBubble::MessageBubble(const Message& m, int availableWidth, QWidget* p)
         connect(open, &QPushButton::clicked, this, &MessageBubble::openFileRequested);
         v->addLayout(h);
     } else if(gameInvite) {
-        auto* title=label("五子棋 · 双人对弈",16,nullptr,true);title->setProperty("bubbleOutgoing",m.outgoing);v->addWidget(title);
+        auto* title=label(GomokuWire::title(GomokuWire::gameId(invitation))+" · 双人对弈",16,nullptr,true);title->setProperty("bubbleOutgoing",m.outgoing);v->addWidget(title);
         auto* text=label(invitation["black"].toString()+" 邀请 "+invitation["white"].toString()+" 加入房间",13);text->setTextFormat(Qt::PlainText);text->setProperty("bubbleOutgoing",m.outgoing);text->setWordWrap(true);v->addWidget(text);
         auto recolor=[title,text,outgoing=m.outgoing]{for(auto* item:QVector<QLabel*>{title,text}){auto palette=item->palette();palette.setColor(QPalette::WindowText,outgoing&&!Theme::instance().pencil()?Theme::instance().colors().onAccent:Theme::instance().colors().text);item->setPalette(palette);}};
         recolor();connect(&Theme::instance(),&Theme::changed,this,recolor);

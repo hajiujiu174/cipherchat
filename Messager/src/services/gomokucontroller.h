@@ -7,17 +7,21 @@
 #include <array>
 namespace Messager {
 struct GomokuRoom {
+    QString game = "gomoku";
     QString id, black, white, resigned;
     qint64 created = 0;
-    int revision = 0, winner = 0;
+    int revision = 0, winner = 0, turn = 1;
     bool started = false, closed = false, pending = false;
     QVector<QPoint> moves;
     std::array<int, 225> board{};
+    int columns() const { return game == "connectfour" ? 7 : game == "reversi" ? 8 : 15; }
+    int rows() const { return game == "connectfour" ? 6 : columns(); }
 };
 class GomokuController final : public QObject {
     Q_OBJECT
   public:
-    explicit GomokuController(ChatService* service, QObject* parent = nullptr);
+    explicit GomokuController(ChatService* service, QObject* parent = nullptr, const QString& game = "gomoku");
+    QString gameId() const { return m_gameId; }
     QList<GomokuRoom> rooms() const;
     GomokuRoom room(const QString& id) const {
         return m_rooms.value(id);
@@ -33,6 +37,7 @@ class GomokuController final : public QObject {
         return m_error;
     }
     static bool replay(GomokuRoom& room, const QJsonArray& moves);
+    static QVector<QPoint> legalMoves(const GomokuRoom& room);
   signals:
     void changed();
     void roomOpened(const QString& id);
@@ -51,7 +56,7 @@ class GomokuController final : public QObject {
     QHash<QString, GomokuRoom> m_rooms;
     QSet<QString> m_seen;
     QHash<QString, qint64> m_pendingSince;
-    QString m_scope, m_error;
+    QString m_scope, m_error, m_gameId;
     bool m_scheduled = false;
 };
 } // namespace Messager

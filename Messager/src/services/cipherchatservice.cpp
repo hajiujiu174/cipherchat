@@ -405,7 +405,7 @@ void CipherChatService::applyRecord(const QJsonObject& o, bool restored) {
     if(!gameControl)for (auto& c : m_conversations)
         if (c.id == m.conversation) {
             c.preview = (m.outgoing ? "我：" : m.sender + "：") + m.text.simplified();
-            if(GomokuWire::decode(m.text)["type"]=="invite")c.preview="五子棋邀请 · 点击加入房间";
+            if(GomokuWire::decode(m.text)["type"]=="invite")c.preview=GomokuWire::title(GomokuWire::gameId(GomokuWire::decode(m.text)))+"邀请 · 点击加入房间";
             c.time = m.time;
             if (!exists && !restored && !m.outgoing && m_viewing != c.id)
                 ++c.unread;

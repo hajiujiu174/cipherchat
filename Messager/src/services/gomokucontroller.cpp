@@ -1,5 +1,7 @@
 #include "gomokucontroller.h"
 #include "../../third_party/gomoku/rules.h"
+#include "../../third_party/connectfour/rules.h"
+#include "../../third_party/reversi/rules.h"
 #include "gomokuwire.h"
 #include <QDateTime>
 #include <QJsonArray>
@@ -18,8 +20,8 @@ bool integral(const QJsonValue& v, int low, int high) {
     return v.isDouble() && v.toDouble() >= low && v.toDouble() <= high && v.toDouble() == v.toInt();
 }
 } // namespace
-GomokuController::GomokuController(ChatService* service, QObject* parent)
-    : QObject(parent), m_service(service) {
+GomokuController::GomokuController(ChatService* service, QObject* parent, const QString& game)
+    : QObject(parent), m_service(service), m_gameId(game) {
     connect(service, &ChatService::messagesChanged, this, [this] { schedule(); });
     connect(service, &ChatService::conversationsChanged, this, [this] { schedule(); });
     connect(service, &ChatService::sessionChanged, this, &GomokuController::session);
@@ -81,33 +83,62 @@ QList<GomokuRoom> GomokuController::rooms() const {
     return result;
 }
 bool GomokuController::replay(GomokuRoom& r, const QJsonArray& moves) {
-    if (moves.size() > 225)
+    if (!QStringList{"gomoku","connectfour","reversi"}.contains(r.game) ||
+        moves.size() > (r.game == "reversi" ? 60 : r.columns()*r.rows()))
         return false;
     r.moves.clear();
     r.board.fill(0);
     r.winner = 0;
+    r.turn = 1;
+    if (r.game == "reversi") {
+        r.board[3*8+3]=r.board[4*8+4]=2;
+        r.board[3*8+4]=r.board[4*8+3]=1;
+    }
     for (const auto& value : moves) {
         if (!value.isArray() || value.toArray().size() != 2 || r.winner)
             return false;
         auto p = value.toArray();
-        if (!integral(p[0], 0, 14) || !integral(p[1], 0, 14))
+        if (!integral(p[0], 0, r.columns()-1) || !integral(p[1], 0, r.rows()-1))
             return false;
         int x = p[0].toInt(), y = p[1].toInt();
-        if (r.board[y * 15 + x])
+        if (r.board[y * r.columns() + x])
             return false;
-        int player = r.moves.size() % 2 + 1;
-        r.board[y * 15 + x] = player;
+        int player = r.turn;
+        if (r.game == "reversi") {
+            if (!ReversiRules::play(r.board,x,y,player)) return false;
+            const bool nextCanMove=ReversiRules::hasMove(r.board,3-player);
+            const bool currentCanMove=ReversiRules::hasMove(r.board,player);
+            if (!nextCanMove && !currentCanMove) {
+                const auto black=std::count(r.board.begin(),r.board.begin()+64,1);
+                const auto white=std::count(r.board.begin(),r.board.begin()+64,2);
+                r.winner=black==white?3:black>white?1:2;
+            }
+            r.turn=nextCanMove?3-player:player; // Forced passes are deterministic on both clients.
+        } else {
+            if (r.game == "connectfour" && ConnectFourRules::dropRow(r.board,x) != y) return false;
+            r.board[y * r.columns() + x] = player;
+            if ((r.game=="gomoku" && GomokuRules::won(r.board,x,y,player)) ||
+                (r.game=="connectfour" && ConnectFourRules::won(r.board,x,y))) r.winner=player;
+            r.turn=3-player;
+        }
         r.moves.append({x, y});
-        if (GomokuRules::won(r.board, x, y, player))
-            r.winner = player;
     }
-    if (r.moves.size() == 225 && !r.winner)
+    if (r.moves.size() == r.columns()*r.rows() && !r.winner)
         r.winner = 3;
     return true;
 }
+QVector<QPoint> GomokuController::legalMoves(const GomokuRoom& r) {
+    QVector<QPoint> result;
+    if (r.winner || r.closed) return result;
+    if (r.game=="connectfour") {
+        for(int x=0;x<7;++x) { int y=ConnectFourRules::dropRow(r.board,x);if(y>=0)result.append({x,y}); }
+    } else for(int y=0;y<r.rows();++y) for(int x=0;x<r.columns();++x)
+        if (!r.board[y*r.columns()+x] && (r.game!="reversi" || !ReversiRules::flips(r.board,x,y,r.turn).empty())) result.append({x,y});
+    return result;
+}
 bool GomokuController::send(const GomokuRoom& room, QJsonObject o) {
     if (!usable())
-        return fail("请登录并保持在线后使用双人五子棋。");
+        return fail("请登录并保持在线后使用好友对战。");
     const auto peer = m_service->username() == room.black ? room.white : room.black;
     if (!m_service->isFriend(peer))
         return fail("仅可与当前好友进行在线对弈。");
@@ -118,6 +149,7 @@ bool GomokuController::send(const GomokuRoom& room, QJsonObject o) {
     o["black"] = room.black;
     o["white"] = room.white;
     o["created"] = room.created;
+    if (room.game != "gomoku") o["game"] = room.game;
     const auto id = m_service->send(conversation, GomokuWire::encode(o));
     if (id.isEmpty())
         return fail("消息未提交，请检查连接后重新同步。");
@@ -142,6 +174,8 @@ QString GomokuController::create(const QString& peer) {
         return {};
     }
     GomokuRoom r;
+    r.game=m_gameId;
+    if (!replay(r,{})) { fail("不支持该游戏类型。");return {}; }
     r.id = QUuid::createUuid().toString(QUuid::WithoutBraces).remove('-');
     r.black = m_service->username();
     r.white = peer;
@@ -176,21 +210,21 @@ bool GomokuController::canMove(const QString& id) const {
     const auto r = m_rooms.value(id);
     if (!usable() || r.id.isEmpty() || !r.started || r.closed || r.winner || r.pending || expired(r))
         return false;
-    return (r.moves.size() % 2 == 0 ? r.black : r.white) == m_service->username();
+    return (r.turn == 1 ? r.black : r.white) == m_service->username();
 }
 bool GomokuController::move(const QString& id, int x, int y) {
     if (!canMove(id))
         return fail("尚未轮到你，或正在等待对方确认。");
     auto& r = m_rooms[id];
-    if (x < 0 || x > 14 || y < 0 || y > 14 || r.board[y * 15 + x])
+    if (x < 0 || x >= r.columns() || y < 0 || y >= r.rows())
         return fail("该位置不能落子。");
+    if (r.game=="connectfour") y=ConnectFourRules::dropRow(r.board,x);
+    auto updated = r;
+    auto moves = movesJson(r);
+    moves.append(QJsonArray{x, y});
+    if (!replay(updated,moves)) return fail(r.game=="reversi"?"请选择能夹住对方棋子的提示位置。":"该位置不能落子，或这一列已满。");
     m_error.clear();
     if (m_service->username() == r.black) {
-        auto updated = r;
-        auto moves = movesJson(r);
-        moves.append(QJsonArray{x, y});
-        if (!replay(updated, moves))
-            return false;
         r = updated;
         sendState(r);
         emit changed();
@@ -236,7 +270,7 @@ void GomokuController::sync(const QString& id) {
 }
 bool GomokuController::openInvitation(const Message& m) {
     const auto o = GomokuWire::decode(m.text);
-    if (o["type"] != "invite")
+    if (o["type"] != "invite" || GomokuWire::gameId(o) != m_gameId)
         return false;
     scan();
     const auto id = o["room"].toString();
@@ -268,7 +302,7 @@ void GomokuController::scan() {
             if (m.file || m.state == SendState::Failed)
                 continue;
             const auto o = GomokuWire::decode(m.text);
-            if (o.isEmpty())
+            if (o.isEmpty() || GomokuWire::gameId(o) != m_gameId)
                 continue;
             if (!m.outgoing && m.sender != c.peer)
                 continue;
@@ -291,6 +325,8 @@ void GomokuController::scan() {
             continue;
         if (!m_rooms.contains(id)) {
             GomokuRoom r;
+            r.game=m_gameId;
+            if (!replay(r,{})) continue;
             r.id = id;
             r.black = black;
             r.white = white;
@@ -359,9 +395,9 @@ void GomokuController::scan() {
         if (type == "join") {
             if(!r.closed && !r.winner)r.started=true;
             respond=true;
-        } else if (type == "move" && r.started && !r.closed && !r.winner && r.moves.size() % 2 == 1 &&
+        } else if (type == "move" && r.started && !r.closed && !r.winner && r.turn == 2 &&
                    integral(o["ply"], 0, 225) && o["ply"].toInt() == r.moves.size() &&
-                   integral(o["x"], 0, 14) && integral(o["y"], 0, 14)) {
+                   integral(o["x"], 0, r.columns()-1) && integral(o["y"], 0, r.rows()-1)) {
             auto next = r;
             auto moves = movesJson(r);
             moves.append(QJsonArray{o["x"], o["y"]});

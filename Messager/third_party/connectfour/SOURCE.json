@@ -1,0 +1,11 @@
+{
+  "repository": "https://github.com/devshareacademy/connect-four",
+  "commit": "590702b55a0a0f261ce171a78d878985e0e73656",
+  "files": [
+    "LICENSE",
+    "src/connect-four.ts",
+    "src/data.ts",
+    "src/utils.ts"
+  ],
+  "license": "MIT"
+}

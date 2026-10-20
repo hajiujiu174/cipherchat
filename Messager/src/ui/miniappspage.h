@@ -44,5 +44,6 @@ class MiniAppsPage final : public QWidget {
     QComboBox* m_filter;
     ScientificCalculator* m_calculator;
     GomokuPage* m_gomoku;
+    QHash<QString, GomokuPage*> m_gamePages;
 };
 } // namespace Messager
