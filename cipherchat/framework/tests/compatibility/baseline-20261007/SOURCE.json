@@ -1,0 +1,109 @@
+{
+  "source": "M10 source-baseline.zip before implementation",
+  "files": [
+    {
+      "path": "include/ccfw/account_service.hpp",
+      "sha256": "901572f384219f6c96d80431fabb216fbd96ec4cc3487c1debf545a98e98bef1"
+    },
+    {
+      "path": "include/ccfw/application.hpp",
+      "sha256": "6c6796aaa20dd5dacd8502dda8d25aa9202469a607493eda223cdaab533b1acd"
+    },
+    {
+      "path": "include/ccfw/chat_service.hpp",
+      "sha256": "8bcac804ee2b93dd25745619ea04d55cab90d31ee17ea3376b626710194d6129"
+    },
+    {
+      "path": "include/ccfw/direct_file_channel.hpp",
+      "sha256": "4bc83ebd0b210c987aec32534ca2d96f4e1b097097a328ea2183b89eb330fc42"
+    },
+    {
+      "path": "include/ccfw/file_transfer.hpp",
+      "sha256": "98ce97686637bd4e9894d6cd1157a75709a457c20ea6ca9620c7e0462ded195c"
+    },
+    {
+      "path": "include/ccfw/group_service.hpp",
+      "sha256": "bebdc1e0ca02ff51e49539925985d850105d4daf0fca4044ac4c66f801b96eb2"
+    },
+    {
+      "path": "include/ccfw/local_store.hpp",
+      "sha256": "2d83c07a40aa83b8a945113f62c3f84ea5843bc5b4521c9906e48f780f692e5a"
+    },
+    {
+      "path": "include/ccfw/result.hpp",
+      "sha256": "8303a2634b9af0ed92508495d7ee5b6b57633482007f84ae387d2e27b6bff875"
+    },
+    {
+      "path": "include/ccfw/server_services.hpp",
+      "sha256": "7c924f7e4e1fc4f8a65d9818cc26fb6c6cd0a3cb350b5ebb0fbd69d12d0be61a"
+    },
+    {
+      "path": "include/ccfw/session_service.hpp",
+      "sha256": "9b3bef52c0bd3e1ae54934c7642c48b16c15f987628ac2b1396186238adc1aa9"
+    },
+    {
+      "path": "include/ccfw/transport.hpp",
+      "sha256": "efe60734f0bfa3a87a060c08fb7d320361fdf8aace1ee3ed11af222a76578e3c"
+    },
+    {
+      "path": "include/ccfw/types.hpp",
+      "sha256": "85d90bd558eb3213a874a85eaa557082da5f873b2723704cc14cdffdb27ac736"
+    },
+    {
+      "path": "src/account_service.cpp",
+      "sha256": "e89d70817229a37c2694b833d4481dd27de4f909ae528e0a043c4796190da531"
+    },
+    {
+      "path": "src/application.cpp",
+      "sha256": "b90e3b01036675ad33ed23aedca6ecdd73cbbb744122c1f57db6ae526e89e8c8"
+    },
+    {
+      "path": "src/chat_service.cpp",
+      "sha256": "f51263ce26bf692505476b87499f6a753315abb1e0d44f823c60a2e16c93302e"
+    },
+    {
+      "path": "src/direct_file_channel.cpp",
+      "sha256": "ccb0ed01f6613e33d3fe46b9cdb7f01375007cf9f16fdeb02b6d928ca19f3c27"
+    },
+    {
+      "path": "src/file_transfer.cpp",
+      "sha256": "17d8a7e469c55b9242130ccb26272934bbc53246af13492d0b9879b32065228a"
+    },
+    {
+      "path": "src/group_service.cpp",
+      "sha256": "7cd51794dcf2921b5f837106d772aab17ad010957f10fd9a8174849b4b7735a4"
+    },
+    {
+      "path": "src/local_store.cpp",
+      "sha256": "57562fb13fa2c803270ed80252af95aa0a95c8f264ff9424cec19eec443af479"
+    },
+    {
+      "path": "src/secret_protector.cpp",
+      "sha256": "849a26ffaed8a100b3df9748a14599a742bd2fa0d653e9eaaf385bae86d0d987"
+    },
+    {
+      "path": "src/server_services.cpp",
+      "sha256": "55b3e4c31006de5c3bf5a8418c5f2fc68fe70529fa9287b0f533b1ca17b67a1b"
+    },
+    {
+      "path": "src/session_service.cpp",
+      "sha256": "0804442c47b5b052a7abcf8a7909c9fe001df90ab8fa5e3e6adf8ff675618d5c"
+    },
+    {
+      "path": "src/snapshot_codec.hpp",
+      "sha256": "00a0d40dcc566a5f3c169eb100252662c27160eeab5a3d6ccc4cc5395bc76448"
+    },
+    {
+      "path": "src/sqlite_helpers.hpp",
+      "sha256": "7e308f21e6f083b8e3b594947ebebf99e13c8896a33cc2652af3e62edf03fb4f"
+    },
+    {
+      "path": "src/transport.cpp",
+      "sha256": "dbbfea0b5c775e6cf1035aa992fb03758e179503f0154c242b265ef9e79b0c96"
+    },
+    {
+      "path": "src/wire_helpers.hpp",
+      "sha256": "e46db69ddf2243a229e66b209f216a501cae4c1655159ac70a89b89fee0989a6"
+    }
+  ]
+}

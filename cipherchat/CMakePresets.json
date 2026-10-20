@@ -1,0 +1,46 @@
+{
+  "version": 5,
+  "configurePresets": [
+    {
+      "name": "core-debug",
+      "displayName": "CipherChat server + client core + tests (no Qt)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/core",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "CIPHERCHAT_BUILD_GUI": "OFF",
+        "CMAKE_C_COMPILER": "D:/msys64/mingw64/bin/gcc.exe",
+        "CMAKE_CXX_COMPILER": "D:/msys64/mingw64/bin/g++.exe"
+      }
+    },
+    {
+      "name": "desktop-debug",
+      "inherits": "core-debug",
+      "displayName": "CipherChat 全量（含 Qt 6 桌面客户端）",
+      "binaryDir": "${sourceDir}/build/desktop",
+      "cacheVariables": {
+        "CIPHERCHAT_BUILD_GUI": "ON",
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.11.2/mingw_64"
+      }
+    },
+    {
+      "name": "desktop-release",
+      "inherits": "desktop-debug",
+      "binaryDir": "${sourceDir}/build/desktop-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CIPHERCHAT_BUILD_GUI": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "core-debug", "configurePreset": "core-debug" },
+    { "name": "desktop-debug", "configurePreset": "desktop-debug" },
+    { "name": "desktop-release", "configurePreset": "desktop-release" }
+  ],
+  "testPresets": [
+    { "name": "core-debug", "configurePreset": "core-debug", "output": { "outputOnFailure": true } },
+    { "name": "desktop-debug", "configurePreset": "desktop-debug", "output": { "outputOnFailure": true } }
+  ]
+}
