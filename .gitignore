@@ -1,0 +1,14 @@
+build/
+**/build/
+**/work/
+**/artifacts/
+**/runtime*/
+**/evidence/
+**/screenshots/
+**/.serena/
+**/__pycache__/
+*.db
+*.sqlite*
+*.pem
+*.key
+.env

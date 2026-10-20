@@ -1,0 +1,9 @@
+<RCC>
+  <qresource prefix="/rhine">
+    <file>ArchiveView.qml</file>
+    <file>Motion.js</file>
+    <file alias="archive-cassette.glb">../../../third_party/rhinelab/archive-cassette.glb</file>
+    <file alias="LICENSE">../../../third_party/rhinelab/LICENSE</file>
+    <file alias="NOTICE.md">../../../third_party/rhinelab/NOTICE.md</file>
+  </qresource>
+</RCC>

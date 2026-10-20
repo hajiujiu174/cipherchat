@@ -1,0 +1,24 @@
+{
+  "conversations": [
+    {"id":"design","name":"产品设计讨论","initials":"D","color":"#6554d9","group":true,"preview":"林予：新版界面稿已经整理好了","time":"10:28","unread":0,"subtitle":"5 位成员 · 演示群组"},
+    {"id":"lin","name":"林予","initials":"予","color":"#458995","group":false,"preview":"文件我放在群里了，下午一起看看？","time":"10:24","unread":2,"subtitle":"产品设计师 · 演示联系人"},
+    {"id":"dev","name":"Messager 开发组","initials":"M","color":"#4d78bf","group":true,"preview":"周屿：Widgets 版本可以开始体验了","time":"09:56","unread":4,"subtitle":"8 位成员 · 演示群组"},
+    {"id":"zhou","name":"周屿","initials":"屿","color":"#b57d54","group":false,"preview":"收到，我们先把交互串起来。","time":"09:42","unread":0,"subtitle":"客户端开发 · 演示联系人"},
+    {"id":"xu","name":"许知夏","initials":"夏","color":"#ae729d","group":false,"preview":"这组配色看起来很舒服","time":"昨天","unread":0,"subtitle":"视觉设计师 · 演示联系人"},
+    {"id":"notes","name":"我的收藏","initials":"☆","color":"#71917b","group":false,"preview":"随手记录，留给下一次灵感","time":"昨天","unread":0,"subtitle":"仅在当前演示会话中保存"},
+    {"id":"weekend","name":"周末出走计划","initials":"山","color":"#8f8b67","group":true,"preview":"目的地还没定，先把周末空出来","time":"周四","unread":0,"subtitle":"4 位成员 · 演示群组"}
+  ],
+  "messages": [
+    {"id":"m1","conversation":"design","sender":"林予","text":"早上好！这次先把聊天体验打磨好，\n让消息和文件都更容易找到。","outgoing":false,"time":"10:20"},
+    {"id":"m2","conversation":"design","sender":"我","text":"赞同，布局保持简洁，给内容多留一点空间。","outgoing":true,"time":"10:22"},
+    {"id":"m3","conversation":"design","sender":"周屿","text":"我整理了第一版交互说明，大家可以先看看。","outgoing":false,"time":"10:24"},
+    {"id":"m4","conversation":"design","sender":"周屿","text":"Messager 交互说明.pdf","file":true,"outgoing":false,"time":"10:24"},
+    {"id":"m5","conversation":"design","sender":"我","text":"很清晰。我们就从这版开始 ✨","outgoing":true,"time":"10:26"},
+    {"id":"m6","conversation":"design","sender":"林予","text":"新版界面稿已经整理好了，下午一起过一遍吧。","outgoing":false,"time":"10:28"},
+    {"id":"l1","conversation":"lin","sender":"林予","text":"文件我放在群里了，下午一起看看？","outgoing":false,"time":"10:24"},
+    {"id":"d1","conversation":"dev","sender":"周屿","text":"Widgets 版本可以开始体验了。\n这是本地模拟数据，还没有连接通信服务。","outgoing":false,"time":"09:56"},
+    {"id":"z1","conversation":"zhou","sender":"周屿","text":"收到，我们先把交互串起来。","outgoing":false,"time":"09:42"},
+    {"id":"x1","conversation":"xu","sender":"许知夏","text":"这组配色看起来很舒服","outgoing":false,"time":"昨天"},
+    {"id":"n1","conversation":"notes","sender":"我","text":"随手记录，留给下一次灵感。","outgoing":true,"time":"昨天"}
+  ]
+}

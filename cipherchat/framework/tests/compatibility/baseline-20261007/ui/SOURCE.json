@@ -1,0 +1,28 @@
+{
+  "origin": "immutable pre-M10 source-baseline.zip",
+  "shared_original_assets": "qrc meshes, audio, shaders; unchanged qmldir and BootMotion.mjs",
+  "files": {
+    "ArrayMaterial.qml": "bcf61916ff3c2163e869a25612655a53e50cf5cfc998c1e6299786ec76398c71",
+    "Boot.qml": "c038377e6fa864b4c995630cdf8a481c5b4a52336ff1dfb3baf96a5c76cb05ba",
+    "Cassette.qml": "c480c42794e7dfd8c354609d411e6ec688208ac5cfe9680845491074ef31ba34",
+    "ChatPanel.qml": "3d228b4ca9d5474c7f2f347f6aacbdeff41921b6927ffb7ed6a03566586ffd70",
+    "ChatStore.qml": "69c3c0fed6541990c2f626d090bf701a022e212bd5667366b883fe5bf8161d22",
+    "DetailContent.qml": "1faf4dd113c0ed893ebd2c028c72bf4948e1811e68434b8ffd985a7745cb00c2",
+    "Glyph.qml": "f6548075787ba6ea3bd7c420c188e6add79274bd9021075ff3354aa0fa0197ed",
+    "InspectionOverlay.qml": "7a9b38fe10ed687ec84c16e998923908b11bd94af5d955f14f7ebd3c78239b4d",
+    "KeyCap.qml": "a81b6e7a8e5fd8801cdba97761a2403c2e1523bcb81ef102f571cc0bbcf467f8",
+    "Logo.qml": "462a5f9e882bba40319019f239a9d9c56c1acb7a663f6a0a1c19ecb6fa1b675a",
+    "Main.qml": "3956775faa2de64ccf5bbb767fa958aa6879b70f0ac9ed5b7c9be9ba8c74aa97",
+    "RButton.qml": "9d994bb0de0d7700d758132c78fe2bf1f7a5ce759352ba54fe1d7ee346dc66f2",
+    "Records.js": "1901fa7fc6fe69c5fcd6f78d9214175ad205bc8b042bebc45168dccdfc06be8f",
+    "RField.qml": "14403f365ada30e21c9d74749b5c171a6a9567bee310fcca11044ea98fd6f0e3",
+    "Rolling.qml": "f9c4624030e6c7d4a11cbdb5d90f9881577fe1cc150e8fa3163fe67b1ff814db",
+    "Scene.qml": "c8df5af12ff91b5975d09dc2273c00b378d8bd5fa09e1448990b57e1f656f89a",
+    "ShellMaterial.qml": "fbc9cf1343e729e2034d0d61154f754645d6e356c8f9747879a5db6f1a19671d",
+    "TerminalAudio.qml": "5d6e16da0d57264fae8bc5686b4b0bdee333756fcdbadfe3fff41a8c27757bbf",
+    "TerminalModal.qml": "6df7bca81c77efb0fe37b3553d94e3c328a70205290331b233e1d8693d79980e",
+    "Theme.qml": "12d2eda316aca82796cbc54566c71a6671dad0ace06f323dfa7e7ab2d555daf6",
+    "qmldir": "943de7f924765fad9c4adcb4781c4348875b28f685c4a031562d6c2ee58a9af4",
+    "BootMotion.mjs": "c437ea0299ac56437f00c01eb43281aceed6a103da38a7eeddfbde098b5b9b05"
+  }
+}
