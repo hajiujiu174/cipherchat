@@ -79,6 +79,11 @@ class UpdateTest:public QObject {
         const auto published=qEnvironmentVariable("MESSAGER_RELEASE_FEED"),portable=qEnvironmentVariable("MESSAGER_RELEASE_RUNTIME");
         if(published.isEmpty()||portable.isEmpty())QSKIP("Full release paths are required for this delivery test");
         Feed f;auto source=fs::path(portable.toStdWString());
+        // Version payloads omit the root launcher; activation must use the real
+        // packaged launcher rather than Feed's deliberately non-executable fixture.
+        const auto launcher=source.parent_path().parent_path().parent_path()/"cipherchat-launcher.exe";
+        QVERIFY(fs::is_regular_file(launcher));
+        fs::copy_file(launcher,f.installed/"cipherchat-launcher.exe",fs::copy_options::overwrite_existing);
         const auto publishedManifest=readJson(fs::path(published.toStdWString())/"messager/latest.json");const auto publishedVersion=publishedManifest.at("version").get<std::string>();
         for(const auto& p:fs::recursive_directory_iterator(source))if(p.is_regular_file()){
             auto relative=fs::relative(p.path(),source);if(relative=="release.json")continue;

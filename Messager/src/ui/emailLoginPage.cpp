@@ -14,7 +14,7 @@ void AccountDialog::showEmailLogin() {
     if(m_busy)return;
     if(auto* existing=findChild<QDialog*>("emailLoginDialog")){existing->show();existing->raise();return;}
     auto* page=new QDialog(this);page->setObjectName("emailLoginDialog");page->setAttribute(Qt::WA_DeleteOnClose);
-    page->setWindowTitle("CipherChat · 邮箱验证码登录");page->setMinimumWidth(470);
+    page->setWindowTitle("NEXTALK · 邮箱验证码登录");page->setMinimumWidth(470);
     auto style=[this,page]{auto css=styleSheet();css.replace("#accountDialog","#emailLoginDialog").replace("#accountSubmit","#emailLoginSubmit").replace("#sendRegistrationCode","#emailLoginSendCode").replace("#registrationCodeStatus","#emailLoginStatus");page->setStyleSheet(css);};
     style();connect(&Theme::instance(),&Theme::changed,page,style);
     auto* layout=new QVBoxLayout(page);layout->setContentsMargins(34,32,34,28);layout->setSpacing(16);

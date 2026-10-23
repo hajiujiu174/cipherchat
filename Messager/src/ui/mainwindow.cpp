@@ -19,6 +19,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListView>
+#include <QMenu>
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QScrollBar>
@@ -60,7 +61,7 @@ AccountDialog* MainWindow::accountDialog() const {
     return m_accountDialog.data();
 }
 MainWindow::MainWindow(AppController* c, QWidget* parent) : QMainWindow(parent), m_controller(c) {
-    setWindowTitle(c->service()->isDemo() ? "Messager · 本地 UI 原型" : "CipherChat · Messager");
+    setWindowTitle(c->service()->isDemo() ? "NEXTALK · 本地 UI 原型" : "NEXTALK");
     setMinimumSize(960, 640);
     resize(1280, 800);
     setWindowIcon(applicationIcon());
@@ -118,6 +119,7 @@ MainWindow::MainWindow(AppController* c, QWidget* parent) : QMainWindow(parent),
     });
     connect(c->service(), &ChatService::operationError, this,
             [this](const QString& message) { statusBar()->showMessage(message, 12000); });
+    connect(m_filter, &QAbstractItemModel::layoutChanged, this, [this] { syncListSelection(); });
     connect(m_filter, &QAbstractItemModel::modelReset, this, [this] {
         m_emptyList->setVisible(!m_filter->rowCount());
         syncListSelection();
@@ -171,7 +173,7 @@ QWidget* MainWindow::buildRail() {
     brand->setIcon(applicationIcon());
     brand->setIconSize({44, 44});
     brand->setStyleSheet("padding:0;border:0;background:transparent;");
-    brand->setAccessibleName("Messager 品牌");
+    brand->setAccessibleName("NEXTALK 品牌");
     v->addWidget(brand, 0, Qt::AlignHCenter);
     v->addSpacing(10);
     QStringList icons = {"chat", "users", "moments", "apps", "file", "bell", "settings"},
@@ -202,7 +204,7 @@ QWidget* MainWindow::buildRail() {
     auto* profile = button("我", "chip");
     profile->setObjectName("profileButton");
     profile->setFixedSize(40, 40);
-    profile->setToolTip(m_controller->service()->isDemo() ? "演示账号 / 登录原型" : "CipherChat 账号与连接");
+    profile->setToolTip(m_controller->service()->isDemo() ? "演示账号 / 登录原型" : "NEXTALK 账号与连接");
     profile->setAccessibleName("个人资料");
     v->addWidget(profile, 0, Qt::AlignHCenter);
     connect(profile, &QPushButton::clicked, this, [this]{auto* s=m_controller->service();if(s->online())showProfile(s->username());else showLogin();});
@@ -268,7 +270,26 @@ QWidget* MainWindow::buildChats() {
     m_conversations = new QListView;
     m_conversations->setObjectName("conversationList");
     m_conversations->setAccessibleName("会话列表");
+    m_filter->sort(0);
     m_conversations->setModel(m_filter);
+    m_conversations->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_conversations, &QListView::customContextMenuRequested, this, [this](const QPoint& pos) {
+        const auto index = m_conversations->indexAt(pos);
+        if (!index.isValid()) return;
+        const auto id = index.data(ConversationModel::Id).toString();
+        const bool pinned = index.data(ConversationModel::Pinned).toBool();
+        auto* menu = new QMenu(m_conversations);
+        menu->setObjectName("conversationContextMenu");
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        auto* action = menu->addAction(glyph("pin", Theme::instance().colors().accent),
+                                      pinned ? "取消置顶" : "置顶会话");
+        action->setObjectName("toggleConversationPin");
+        connect(action, &QAction::triggered, this, [this, id, pinned] {
+            static_cast<ConversationModel*>(m_filter->sourceModel())->setPinned(id, !pinned);
+            syncListSelection();
+        });
+        menu->popup(m_conversations->viewport()->mapToGlobal(pos));
+    });
     m_conversations->setItemDelegate(new ConversationDelegate(m_conversations));
     m_conversations->setMouseTracking(true);
     m_conversations->setSelectionMode(QAbstractItemView::SingleSelection);

@@ -1,5 +1,8 @@
 #include "conversationmodel.h"
 #include <QSet>
+#include <QSettings>
+#include <QCryptographicHash>
+#include <QJsonDocument>
 namespace Messager {
 void ConversationFilter::setQuery(const QString& query) {
 #if QT_VERSION >= QT_VERSION_CHECK(6, 10, 0)
@@ -23,6 +26,8 @@ void ConversationFilter::setMode(int mode) {
 }
 ConversationModel::ConversationModel(ChatService* s, QObject* p) : QAbstractListModel(p), m_service(s) {
     m_rows = s->conversations();
+    loadPins();
+    connect(s, &ChatService::sessionChanged, this, &ConversationModel::loadPins);
     connect(s,&ChatService::profileSummaryChanged,this,&ConversationModel::refreshAvatar);
     for(const auto& row:m_rows)if(!row.group)refreshAvatar(row.peer);
     connect(s, &ChatService::conversationsChanged, this, [this] {
@@ -86,11 +91,45 @@ QVariant ConversationModel::data(const QModelIndex& i, int role) const {
         return c.time;
     case Unread:
         return c.unread;
+    case Pinned:
+        return m_pins.contains(c.id);
+    case LastActivity:
+        return c.lastActivity;
     case AvatarImage:
         return c.group?QVariant{}:QVariant::fromValue(m_avatars.value(c.peer));
     default:
         return {};
     }
+}
+QString ConversationModel::pinSettingsKey() const {
+    const auto config = m_service->configuration();
+    QJsonObject scope{{"demo", m_service->isDemo()}, {"user", m_service->username()},
+                      {"host", config["host"]}, {"port", config["port"]},
+                      {"accountScope", config["accountScope"]}};
+    return "conversations/pins/" + QString::fromLatin1(QCryptographicHash::hash(
+        QJsonDocument(scope).toJson(QJsonDocument::Compact), QCryptographicHash::Sha256).toHex());
+}
+void ConversationModel::loadPins() {
+    const auto ids = QSettings().value(pinSettingsKey()).toStringList();
+    m_pins = QSet<QString>(ids.begin(), ids.end());
+    if (rowCount()) emit dataChanged(index(0), index(rowCount()-1), {Pinned});
+}
+void ConversationModel::setPinned(const QString& id, bool pinned) {
+    for (int row = 0; row < rowCount(); ++row) {
+        if (m_rows[row].id != id) continue;
+        if (pinned) m_pins.insert(id); else m_pins.remove(id);
+        QSettings().setValue(pinSettingsKey(), QStringList(m_pins.begin(), m_pins.end()));
+        emit dataChanged(index(row), index(row), {Pinned});
+        return;
+    }
+}
+bool ConversationFilter::lessThan(const QModelIndex& left, const QModelIndex& right) const {
+    const bool lp = left.data(ConversationModel::Pinned).toBool();
+    const bool rp = right.data(ConversationModel::Pinned).toBool();
+    if (lp != rp) return lp;
+    const auto lt = left.data(ConversationModel::LastActivity).toLongLong();
+    const auto rt = right.data(ConversationModel::LastActivity).toLongLong();
+    return lt != rt ? lt > rt : left.row() < right.row();
 }
 bool ConversationFilter::filterAcceptsRow(int r, const QModelIndex& p) const {
     const auto i = sourceModel()->index(r, 0, p);

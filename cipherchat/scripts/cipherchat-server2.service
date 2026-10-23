@@ -1,0 +1,25 @@
+[Unit]
+Description=CipherChat encrypted message relay
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=cipherchat
+StateDirectoryMode=0700
+WorkingDirectory=/var/lib/cipherchat
+ExecStart=/opt/cipherchat/releases/20260915-server2/cipherchat-server 55220 server.db cert.pem key.pem ::
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

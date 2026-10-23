@@ -1,6 +1,7 @@
 #pragma once
 #include "chatservice.h"
 #include "cipherchatgateway.h"
+#include "gameudp.h"
 #include <QHash>
 #include <QJsonArray>
 namespace Messager {
@@ -12,6 +13,11 @@ class CipherChatService final : public ChatService {
     bool isDemo() const override {
         return false;
     }
+    bool gameRelaySupported() const override { return m_online && m_gameRelay; }
+    bool sendGamePacket(const QString&, const QJsonObject&) override;
+    QString gameTransport(const QString& peer) const override {return m_udp.ready(peer)?"UDP":"TLS";}
+    QJsonObject gameTransportStats()const{return m_udp.stats();}
+    bool m_gameRelay=false;
     bool online() const override {
         return m_online;
     }
@@ -93,8 +99,9 @@ class CipherChatService final : public ChatService {
     void refreshProfileSummaries();
     void updateProfileSummary(const QString&, const QJsonObject&);
     CipherChatGateway m_gateway;
+    GameUdp m_udp;
     QJsonObject m_config;
-    QString m_user, m_status = "未连接 · 请登录 CipherChat", m_viewing, m_searchNext;
+    QString m_user, m_status = "未连接 · 请登录 NEXTALK", m_viewing, m_searchNext;
     bool m_online = false;
     QVector<Conversation> m_conversations;
     QVector<Message> m_messages;

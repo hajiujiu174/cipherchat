@@ -1,0 +1,4141 @@
+{
+  "schemaVersion": 1,
+  "sourcePlan": "../../.zcode/plans/plan-sess_12cf29f7-64f7-4e3b-8b67-3e1c95421c1d.md",
+  "scope": "所有路径相对 cipherchat；done 仅指对应任务的明确验收，不代表整个里程碑完成。",
+  "tasks": [
+    {
+      "id": "M0-01",
+      "title": "框架与交接入口",
+      "status": "done",
+      "deps": [],
+      "files": [
+        "framework/CMakeLists.txt",
+        "framework/include/ccfw/result.hpp",
+        "framework/include/ccfw/types.hpp",
+        "framework/tests/contracts_test.cpp"
+      ],
+      "steps": [
+        "维护纯 C++ 契约与单向 CMake 依赖。",
+        "对变更后的接口运行框架构建与契约测试。"
+      ],
+      "accept": [
+        "core-debug 编译通过。",
+        "契约冒烟通过且文档明确不代表业务实现。"
+      ],
+      "milestone": "M0",
+      "testFile": "framework/tests/contracts_test.cpp",
+      "allowedFiles": [
+        "framework/CMakeLists.txt",
+        "framework/include/ccfw/result.hpp",
+        "framework/include/ccfw/types.hpp",
+        "framework/tests/contracts_test.cpp"
+      ],
+      "card": "tasks/M0-01.md",
+      "evidence": {
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "framework-contracts",
+          "seconds": 0.0303537,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M0-02",
+      "title": "恢复原项目测试基线",
+      "status": "done",
+      "deps": [
+        "M0-01"
+      ],
+      "files": [
+        "tests/test_integration.cpp",
+        "client/core/net_client.cpp",
+        "server/net/tls_server.cpp"
+      ],
+      "steps": [
+        "在隔离工作目录复现 E2E-2 的注册等待超时，记录连接建立、回调注册、接收线程与服务器启动顺序。",
+        "先定位证据再修复；禁止直接延长超时或删 REQUIRE。",
+        "把 std::string(5000, '长') 改成合法 UTF-8 长文本生成，避免多字符 char 常量。"
+      ],
+      "accept": [
+        "全量原测试通过，E2E-2 单独及全量运行均通过。",
+        "如无法复现，保留失败记录并说明观察范围，不能标记为已修复。"
+      ],
+      "milestone": "M0",
+      "testFile": "framework/tests/acceptance/test_M0_02.cpp",
+      "allowedFiles": [
+        "tests/test_integration.cpp",
+        "client/core/net_client.cpp",
+        "server/net/tls_server.cpp",
+        "framework/tests/acceptance/test_M0_02.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M0-02.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "rootCause": "主线程 SSL_write 与接收线程 SSL_read 并发访问同一 SSL 对象，OpenSSL 3.6 下应用数据记录静默丢失（客户端写成功、服务器 peer 线程从未收到），表现为 E2E 注册等待 8s 超时。时间戳追踪证实：客户端 send 日志与服务器 router 无 onMessage 记录同时存在。",
+        "fix": "SSL 对象全程单线程拥有：TLS 握手移入收发线程；send() 仅入有界出站队列（256 帧/16MiB），收发线程以 select 空闲窗口统一写出；SSL_ERROR_WANT_READ（TLS1.3 后握手指令）不再误判为断开。双端（NetClient/TlsPeer）同构修复。",
+        "originalTests": "cipherchat-tests 43 cases / 799 assertions 全部通过；连续 9 次全量运行稳定（修复前约 50% 失败率）。另修复 std::string(5000, chr(39)+chr(38271)+chr(39)) 多字符常量为 UTF-8 生成。",
+        "frameworkAcceptance": "ctest M0-02（连续 12 次注册往返 + 并发双客户端注册）3 次运行全部通过；framework-contracts 通过。",
+        "commands": [
+          "cmake --build --preset core-debug && ctest --preset core-debug  (原项目)",
+          "ctest --test-dir build/framework-implementation -R ^M0-02$ --output-on-failure"
+        ],
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M0-02",
+          "seconds": 2.20889,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M0-03",
+      "title": "移除客户端对 server 的认证依赖",
+      "status": "done",
+      "deps": [
+        "M0-02"
+      ],
+      "files": [
+        "common/auth/login_proof.hpp",
+        "common/auth/login_proof.cpp",
+        "server/auth/auth.hpp",
+        "server/auth/auth.cpp",
+        "client/core/client.cpp",
+        "CMakeLists.txt",
+        "framework/CMakeLists.txt"
+      ],
+      "steps": [
+        "将登录证明公式及共享常量移入 common/auth，维持算法和线格式一致。",
+        "服务器与客户端都引用 common，避免双份符号；补入两边构建清单。"
+      ],
+      "accept": [
+        "单独链接 client-core 的小程序无需 server-core 即可调用登录路径。",
+        "既有正确口令、错口令、nonce 重放测试通过。"
+      ],
+      "milestone": "M0",
+      "testFile": "framework/tests/acceptance/test_M0_03.cpp",
+      "allowedFiles": [
+        "common/auth/login_proof.hpp",
+        "common/auth/login_proof.cpp",
+        "server/auth/auth.hpp",
+        "server/auth/auth.cpp",
+        "client/core/client.cpp",
+        "CMakeLists.txt",
+        "framework/CMakeLists.txt",
+        "framework/tests/acceptance/test_M0_03.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M0-03.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "登录证明公式与 PBKDF2 常量迁移到 common/auth/login_proof.{hpp,cpp}（cc::auth 命名空间）；server/auth/auth.hpp 变为兼容转发层（using 声明，router.cpp 无需改动）；client/core/client.cpp 改包含 common/auth，不再引用 server/ 头。双端构建清单均已加入 common/auth/login_proof.cpp。",
+        "originalTests": "cipherchat-tests 43 cases 全部通过（含正确口令/错口令/nonce 重放用例）。",
+        "frameworkAcceptance": "ctest M0-03：仅链接 client-core+common（无 server 翻译单元）的小程序覆盖正确口令/错口令/nonce 重放三路径 + 编译期无泄漏断言，通过。全套 3/3 通过。",
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M0-03",
+          "seconds": 0.289357,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M1-01",
+      "title": "复核加密原语并冻结测试向量",
+      "status": "done",
+      "deps": [
+        "M0-02"
+      ],
+      "files": [
+        "common/crypto/crypto.hpp",
+        "common/crypto/crypto.cpp",
+        "tests/test_crypto.cpp"
+      ],
+      "steps": [
+        "继续使用 OpenSSL 3 EVP，不重写算法。",
+        "补齐 HKDF/AES-GCM 已知向量及零长度明文、错 key/tag/AAD、非法公钥输入。"
+      ],
+      "accept": [
+        "已知向量来自明确标准来源，随机往返不能替代向量测试。",
+        "认证失败不输出明文；尺寸错误返回受控错误。"
+      ],
+      "milestone": "M1",
+      "testFile": "framework/tests/acceptance/test_M1_01.cpp",
+      "allowedFiles": [
+        "common/crypto/crypto.hpp",
+        "common/crypto/crypto.cpp",
+        "tests/test_crypto.cpp",
+        "framework/tests/acceptance/test_M1_01.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M1-01.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "tests/test_crypto.cpp 补齐冻结向量：RFC 7748 §6.1 X25519、RFC 8032 §7.1 Ed25519 TEST1、GCM 规范（McGrew-Viega）TC3/TC4（AES-256）、RFC 7914 §11 PBKDF2（c=1/2/4096）；既有 RFC 5869 HKDF 向量保留。算法零改动（OpenSSL 3 EVP 不重写）。",
+        "originalTests": "cipherchat-tests 47 cases / 819 assertions 全部通过。",
+        "frameworkAcceptance": "ctest M1-01（同组冻结向量 + 认证失败不输出明文/尺寸错误受控拒绝），通过。全套 4/4 通过。",
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M1-01",
+          "seconds": 0.0296722,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M1-02",
+      "title": "棘轮认证失败不破坏状态",
+      "status": "done",
+      "deps": [
+        "M1-01"
+      ],
+      "files": [
+        "common/ratchet/double_ratchet.cpp",
+        "common/ratchet/double_ratchet.hpp",
+        "tests/test_ratchet.cpp"
+      ],
+      "steps": [
+        "现 decrypt 先推进链/删除 skipped key；改成候选状态成功后提交。",
+        "同时覆盖乱序缓存、跨 DH 棘轮、超出 64 条缓存上限与重放。"
+      ],
+      "accept": [
+        "篡改包失败后原合法包仍可解密。",
+        "失败前后序列化状态完全相同；64 条边界与 65 条行为清楚。",
+        "前向保密描述与测试方向一致，不把旧单条消息密钥测试说成完整安全证明。"
+      ],
+      "milestone": "M1",
+      "testFile": "framework/tests/acceptance/test_M1_02.cpp",
+      "allowedFiles": [
+        "common/ratchet/double_ratchet.cpp",
+        "common/ratchet/double_ratchet.hpp",
+        "tests/test_ratchet.cpp",
+        "framework/tests/acceptance/test_M1_02.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M1-02.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "common/ratchet/double_ratchet.cpp decrypt 重写为候选副本语义：全程在 DoubleRatchet cand = *this 上推进链/缓存/棘轮，仅 AEAD 验证成功后 *this = std::move(cand) 提交；乱序缓存命中也不先删（验证成功才删）。算法与线格式不变，encrypt/序列化零改动。",
+        "originalTests": "cipherchat-tests 50 cases / 860 assertions 全部通过（新增：篡改后原包可解、失败前后 toJson 逐字节相同、乱序缓存不被失败消费、跨 DH 棘轮失败零变化、64/65 缓存边界）。",
+        "frameworkAcceptance": "ctest M1-02（同组原子性断言）通过；全套 5/5 通过。",
+        "securityNote": "前向保密测试方向保持“泄露旧状态解不开未来消息”；单条旧消息密钥泄露不构成完整安全证明，方案书表述与此一致。",
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M1-02",
+          "seconds": 0.0475687,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M1-03",
+      "title": "身份信任与会话建立服务",
+      "status": "done",
+      "deps": [
+        "M1-02"
+      ],
+      "files": [
+        "framework/src/session_service.cpp",
+        "framework/include/ccfw/session_service.hpp",
+        "common/ratchet/x3dh.cpp"
+      ],
+      "steps": [
+        "用 ILocalStore 测试替身取得已持久化身份。",
+        "establish 先核对用户名绑定的签名/DH 公钥，再校验 SPK 签名，调用现有 X3DH/ratchet。",
+        "未知或变更身份返回 IdentityChanged；只有 acceptPeerIdentity 可记录显式确认。"
+      ],
+      "accept": [
+        "篡改 SPK、整体替换束、改变 DH 身份均不能悄悄建会话。",
+        "双方根密钥一致；有 OPK/无 OPK 路径均覆盖。"
+      ],
+      "milestone": "M1",
+      "testFile": "framework/tests/acceptance/test_M1_03.cpp",
+      "allowedFiles": [
+        "framework/src/session_service.cpp",
+        "framework/include/ccfw/session_service.hpp",
+        "common/ratchet/x3dh.cpp",
+        "framework/tests/acceptance/test_M1_03.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M1-03.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "framework/src/session_service.cpp 实现 establish + acceptPeerIdentity：先核对信任记录中用户名绑定的签名/DH 公钥（未知/变更 → IdentityChanged），再验证 SPK 签名（失败 → AuthenticationFailed），复用既有 x3dhInitiate/initAsInitiator，原子提交 SessionRecord（revision 严格 +1，AD=双方身份公钥字典序拼接）。x3dh.cpp 零改动。acceptPeerIdentity 是唯一写信任记录的入口（含身份轮换的显式重新确认）。",
+        "originalTests": "cipherchat-tests 50 cases 全部通过（本任务未触碰原项目文件）。",
+        "frameworkAcceptance": "ctest M1-03：未知身份 IdentityChanged、显式确认后才可建会话、篡改 SPK 拒绝且状态零变化、整体替换束/DH 身份变更被拒、有 OPK/无 OPK 根密钥一致、身份轮换重新确认。全套 6/6 通过。",
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M1-03",
+          "seconds": 0.0627194,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M2-01",
+      "title": "TLS 服务身份验证",
+      "status": "done",
+      "deps": [
+        "M0-03"
+      ],
+      "files": [
+        "common/net/tls_context.hpp",
+        "common/net/tls_context.cpp",
+        "client/core/net_client.hpp",
+        "client/core/net_client.cpp",
+        "tests/test_integration.cpp"
+      ],
+      "steps": [
+        "给 TLS 上下文增加受信 CA 和预期主机名配置，开发证书带 SAN。",
+        "正式路径启用证书链与主机名验证，限制 TLS 1.3。",
+        "用项目临时 CA 供测试信任；不安装系统根证书，不保留默认跳过校验。"
+      ],
+      "accept": [
+        "合法 CA+名称连接成功；未知 CA、错名称、过期证书被拒绝。",
+        "失败连接不提交口令/认证证明。"
+      ],
+      "milestone": "M2",
+      "testFile": "framework/tests/acceptance/test_M2_01.cpp",
+      "allowedFiles": [
+        "common/net/tls_context.hpp",
+        "common/net/tls_context.cpp",
+        "client/core/net_client.hpp",
+        "client/core/net_client.cpp",
+        "tests/test_integration.cpp",
+        "framework/tests/acceptance/test_M2_01.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M2-01.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "common/net/tls_context 重写：自签/CA 签发证书均带 SAN（DNS:localhost + IP:127.0.0.1）；新增 makeMemoryServerTls（临时 CA + CA 签发服务端证书，负天数构造过期证书供测试）、makeClientContextFromPem/makeClientContext（SSL_VERIFY_PEER + 信任锚）、makeClientContextInsecure（显式命名，仅 v1 旧版回归）。NetClient 新增 startSecure（正式路径：SSL_set1_host 主机名校验 + SNI）与 handshakeDone() 就绪信号；TLS 上下文先于 TCP 连接创建（信任锚解析失败不产生半开连接）；stop() 修复 joinable 线程未回收导致的 terminate。旧 start() 保留为显式不校验回归路径。",
+        "originalTests": "cipherchat-tests 50 cases 全部通过（start() 回归路径未破坏）。",
+        "frameworkAcceptance": "ctest M2-01：合法 CA+主机名握手成功；未知 CA/错误主机名/过期证书均被拒；失败连接不发出任何业务帧。全套 7/7 通过。",
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M2-01",
+          "seconds": 0.941064,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M2-02",
+      "title": "登录挑战生命周期",
+      "status": "done",
+      "deps": [
+        "M0-03"
+      ],
+      "files": [
+        "framework/src/server_services.cpp",
+        "framework/include/ccfw/server_services.hpp",
+        "server/router/router.cpp",
+        "server/router/router.hpp"
+      ],
+      "steps": [
+        "实现 ChallengeBook 并绑定 connectionId、username、随机 nonce、到期时间。",
+        "consume 一次性取出；失败也消费，断线清理；设置最多待认证连接数。",
+        "路由器接入，并校验响应账号与被挑战账号相同。"
+      ],
+      "accept": [
+        "过期、换账号、换连接、重复响应失败。",
+        "旧连接退出不能注销新的同名已登录连接。"
+      ],
+      "milestone": "M2",
+      "testFile": "framework/tests/acceptance/test_M2_02.cpp",
+      "allowedFiles": [
+        "framework/src/server_services.cpp",
+        "framework/include/ccfw/server_services.hpp",
+        "server/router/router.cpp",
+        "server/router/router.hpp",
+        "framework/tests/acceptance/test_M2_02.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M2-02.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "reproduction": "修复前原项目 CTest 1/1、既有框架 CTest 7/7 通过；先新增两项回归测试，实际复现换账号响应被接受及旧连接断开注销新连接：2 个用例失败、5 个断言失败。保留 M2-02-before-fix.log 和原始 baseline.md。",
+        "change": "路由器复用 ChallengeBook，绑定服务器连接标识、账号、16 字节随机 nonce 和单调时钟 60 秒有效期；所有响应先一次性消费挑战，验证账号匹配后复用原口令证明和 Ed25519 验签。待认证记录上限 1024，支持替换、断线释放和过期回收。顶号撤销旧连接身份及挑战；鉴权和断线核对实际在线 Peer；在线查询加锁。",
+        "interfaceImpact": "Router 增加可选时钟注入，原 Router(database) 调用兼容；ChallengeBook 增加 purgeExpired，既有方法保留。server_services.hpp 的 result.hpp 改为同目录包含供原项目直接复用，无需新增链接库。",
+        "frameworkAcceptance": "implementation-debug 配置、构建和清单/分层检查通过；最终 CTest 8/8 通过，其中 M2-02 14 cases / 3580 assertions 通过，覆盖过期边界、换账号、换连接、重放、非法响应、容量回收及顶号后的消息投递和离线广播。",
+        "originalTests": "原项目 core-debug 构建通过；CTest unit 通过：50 cases / 862 assertions，包含既有真实 TLS 集成测试。",
+        "knownIssue": "额外检查 framework core-debug 发现既有 M1-03 SessionService 使用加密/棘轮实现，但该预设关闭 CCFW_LINK_EXISTING，导致契约程序链接失败。框架使用已通过的 implementation-debug；该工程问题未在 M2-02 文件范围外修改，未冒充通过。",
+        "commands": [
+          "framework: .\\scripts\\verify.ps1 -Preset implementation-debug",
+          "framework: ctest --test-dir build/framework-implementation -R ^M2-02$ --output-on-failure --no-tests=error",
+          "cipherchat: cmake --build --preset core-debug -j 2",
+          "cipherchat: ctest --preset core-debug --timeout 45",
+          "framework: .\\scripts\\verify.ps1 -Preset core-debug (额外检查，链接失败)"
+        ],
+        "logs": [
+          "build/framework-implementation/Testing/M2-02-before-fix.log",
+          "build/framework-implementation/Testing/M2-02-after-fix.log",
+          "build/framework-implementation/Testing/M2-02-root-regression.log",
+          "build/framework-core/M2-02-core-link-check.log"
+        ],
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M2-02",
+          "seconds": 1.513,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M2-03",
+      "title": "离线队列改成签收后删除",
+      "status": "done",
+      "deps": [
+        "M2-02"
+      ],
+      "files": [
+        "framework/src/server_services.cpp",
+        "server/storage/storage.hpp",
+        "server/storage/storage.cpp",
+        "server/router/router.cpp",
+        "common/protocol/messages.hpp",
+        "common/protocol/messages.cpp",
+        "framework/schema/server_delivery.sql"
+      ],
+      "steps": [
+        "实现 IDeliveryQueue 的 enqueue/peek/acknowledge，主键为 recipient+messageId。",
+        "按 contracts.md 增加带版本握手的 recipient_ack；旧客户端不冒充已签收。",
+        "替换 drainOffline 取走即删的调用链，先持久化再返回服务器接收确认。"
+      ],
+      "accept": [
+        "取消息后立即断线，重连仍可再投。",
+        "错收件人 ACK 不删消息；重复投递/ACK 幂等。"
+      ],
+      "milestone": "M2",
+      "testFile": "framework/tests/acceptance/test_M2_03.cpp",
+      "allowedFiles": [
+        "framework/src/server_services.cpp",
+        "server/storage/storage.hpp",
+        "server/storage/storage.cpp",
+        "server/router/router.cpp",
+        "common/protocol/messages.hpp",
+        "common/protocol/messages.cpp",
+        "framework/tests/acceptance/test_M2_03.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/schema/server_delivery.sql"
+      ],
+      "card": "tasks/M2-03.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "显式 v2 hello 协商；SQLite 密文可靠队列，签收事务删除密文并保存绑定摘要收据，重发可恢复签收确认。按连接认证 ACK，持久化后才返回 accepted。在线投递窗口 32 条/8MiB；原 v1 路径隔离保留。",
+        "tests": "M2-03 7 cases / 153 assertions 全通过；框架 implementation-debug 9/9 CTest 通过；原项目 core-debug CTest unit 通过。覆盖换接收方 ACK、重复投递/签收、断线补投、新服务器对象重启恢复、SQL 事务失败回滚和投递窗口推进。",
+        "commands": [
+          "cmake --build --preset core-debug -j 3 (项目根)",
+          "ctest --preset core-debug --timeout 45 (项目根)",
+          ".\\scripts\\verify.ps1 -Preset implementation-debug (framework)"
+        ],
+        "interfaceImpact": "扩充 SqliteDeliveryQueue RAII/find，Storage 组合队列，Router 记录协商及投递状态；双工程链接唯一 server_services.cpp。公共 crypto 新增 EVP SHA-256 摘要。修复框架 core-debug 关闭实现链接的问题（等待该预设后续完整验证）。",
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M2-03",
+          "seconds": 0.133175,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M3-01",
+      "title": "带收包队列的 TLS 适配器",
+      "status": "done",
+      "deps": [
+        "M2-01"
+      ],
+      "files": [
+        "framework/src/transport.cpp",
+        "framework/include/ccfw/transport.hpp",
+        "framework/CMakeLists.txt"
+      ],
+      "steps": [
+        "适配已修复 TLS 与 frame；实现 send、非阻塞 poll、幂等 close。",
+        "网络线程只入有界队列，不回调业务对象；错误与无消息分开。",
+        "为 SSL 与 socket 增加对应链接和 RAII；跨线程关闭按契约 join。"
+      ],
+      "accept": [
+        "分包、粘包、多帧、超长帧、断线、重复 close 均受控。",
+        "析构不留下线程，不在工作线程 join 自身。"
+      ],
+      "milestone": "M3",
+      "testFile": "framework/tests/acceptance/test_M3_01.cpp",
+      "allowedFiles": [
+        "framework/src/transport.cpp",
+        "framework/include/ccfw/transport.hpp",
+        "framework/CMakeLists.txt",
+        "framework/tests/acceptance/test_M3_01.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M3-01.md",
+      "evidence": {
+        "commands": [
+          "cmake --build --preset implementation-debug -j 3",
+          "ctest --preset implementation-debug --timeout 45"
+        ],
+        "date": "2026-09-14",
+        "change": "TLS 适配器复用修复后的 NetClient，非阻塞 SSL 单线程拥有，入站队列 256 条/16MiB；超时、协议错误及断线显式返回。修复原客户端异常帧、socket 生命周期、重连状态和 SSL 内部缓冲读取。",
+        "tests": "6 个真实 TLS 验收用例通过：分包/粘包/跨 TLS 记录、大消息发送、异常帧、队列溢出、握手超时/主机名错误和重复重连。框架 12/12 CTest、原项目 unit 回归通过。",
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M3-01",
+          "seconds": 0.562962,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M3-04",
+      "title": "本地秘密保护器",
+      "status": "done",
+      "deps": [
+        "M0-01"
+      ],
+      "files": [
+        "framework/src/secret_protector.cpp",
+        "framework/CMakeLists.txt"
+      ],
+      "steps": [
+        "Windows 使用当前用户 DPAPI，写入带版本的封装。",
+        "CMake 仅 Windows 链接 Crypt32；其他平台返回明确不支持错误。",
+        "错误映射为 Result，禁止静默落盘明文。"
+      ],
+      "accept": [
+        "同用户往返成功；截断/篡改/错误格式失败。",
+        "测试日志没有私钥或解封后的快照。"
+      ],
+      "milestone": "M3",
+      "testFile": "framework/tests/acceptance/test_M3_04.cpp",
+      "allowedFiles": [
+        "framework/src/secret_protector.cpp",
+        "framework/CMakeLists.txt",
+        "framework/tests/acceptance/test_M3_04.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M3-04.md",
+      "evidence": {
+        "commands": [
+          "cmake --build --preset implementation-debug -j 3",
+          "ctest --preset implementation-debug --timeout 45"
+        ],
+        "date": "2026-09-14",
+        "change": "当前 Windows 用户 DPAPI 封装，版本/长度头与固定用途熵，拒绝截断、篡改、附加数据及未知格式；非 Windows 明确失败。",
+        "tests": "2 个用例及空数据、所有字节、1MiB 快照、6 个错误格式子用例通过；框架 12/12 CTest 通过。",
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M3-04",
+          "seconds": 0.134253,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M3-03",
+      "title": "SQLite 客户端原子快照",
+      "status": "done",
+      "deps": [
+        "M3-04"
+      ],
+      "files": [
+        "framework/src/local_store.cpp",
+        "framework/include/ccfw/local_store.hpp",
+        "framework/CMakeLists.txt",
+        "framework/schema/client.sql"
+      ],
+      "steps": [
+        "加载 schema/client.sql，按账号+服务器隔离。",
+        "序列化 ClientSnapshot 后交 protector 加密；load 解封校验字段和版本。",
+        "commit 使用 BEGIN IMMEDIATE + revision 条件更新 + COMMIT；失败 ROLLBACK。"
+      ],
+      "accept": [
+        "新对象打开同一临时数据库恢复相同身份与会话。",
+        "旧 revision 提交冲突；损坏/错误账号不覆盖数据库。",
+        "模拟事务失败后 ratchet/history/outbox 要么全部提交要么都不变。"
+      ],
+      "milestone": "M3",
+      "testFile": "framework/tests/acceptance/test_M3_03.cpp",
+      "allowedFiles": [
+        "framework/src/local_store.cpp",
+        "framework/include/ccfw/local_store.hpp",
+        "framework/CMakeLists.txt",
+        "framework/schema/client.sql",
+        "framework/tests/acceptance/test_M3_03.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M3-03.md",
+      "evidence": {
+        "commands": [
+          "cmake --build --preset implementation-debug -j 3",
+          "ctest --preset implementation-debug --timeout 45"
+        ],
+        "date": "2026-09-14",
+        "change": "CBOR 原始字节序列化完整客户端快照，再经 DPAPI 保护；SQLite FULL/WAL、BEGIN IMMEDIATE、revision CAS，一次提交身份/会话/历史/发件箱/文件状态。账号与服务器双重隔离，错误和损坏不重置原数据。",
+        "tests": "4 个用例及重新打开完整快照、双 writer 旧版本冲突、跨账号/服务器拒绝、保护器失败、SQL trigger 事务失败和5种损坏子用例通过；框架 12/12 CTest 通过。",
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M3-03",
+          "seconds": 0.208953,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M3-02",
+      "title": "注册与登录状态机",
+      "status": "done",
+      "deps": [
+        "M0-03",
+        "M3-01",
+        "M3-03"
+      ],
+      "files": [
+        "framework/src/account_service.cpp",
+        "framework/include/ccfw/account_service.hpp",
+        "framework/CMakeLists.txt"
+      ],
+      "steps": [
+        "先执行 negotiateProtocol：TLS 就绪后发送 hello，验证 version=2 的成功响应，进入 Connected 后才允许注册/登录。",
+        "按 phase 校验调用，先保存身份再发注册请求。",
+        "已有账号登录加载私钥，处理 challenge 与结果；不存在身份时返回明确错误。",
+        "用 common 登录证明函数，清理口令，给参数和等待时间设上限。"
+      ],
+      "accept": [
+        "重启客户端后无需重新注册即可登录。",
+        "错账号、错口令、缺私钥、断线、重复点击均有明确状态且无死锁。"
+      ],
+      "milestone": "M3",
+      "testFile": "framework/tests/acceptance/test_M3_02.cpp",
+      "allowedFiles": [
+        "framework/src/account_service.cpp",
+        "framework/include/ccfw/account_service.hpp",
+        "framework/CMakeLists.txt",
+        "framework/tests/acceptance/test_M3_02.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M3-02.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "账号状态机真实路由/SQLite 验收：保存身份后注册、原私钥登录、挑战阶段与超时、错误密码、错账号、缺失身份、预共享密钥上传。",
+        "frameworkAcceptance": "完整 implementation-debug 20/20 CTest 通过，34.82 秒；同名任务 CTest 已注册。",
+        "originalTests": "原项目 core-debug unit 通过，7.08 秒。",
+        "logs": [
+          "build/framework-implementation/Testing/Temporary/LastTest.log",
+          "../build/core/Testing/Temporary/LastTest.log"
+        ],
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M3-02",
+          "seconds": 1.09336,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M3-05",
+      "title": "应用编排与事件边界",
+      "status": "done",
+      "deps": [
+        "M3-02"
+      ],
+      "files": [
+        "framework/src/application.cpp",
+        "framework/include/ccfw/application.hpp"
+      ],
+      "steps": [
+        "connect 与 account phase 联动；tick 单次最多处理 64 个入站消息。",
+        "按表分发账号/消息/file_meta/file_chunk/群/presence/typing；未知消息报错。",
+        "file_meta 应通过 FileTransferService 的解密入口验证；事件仅进队列。"
+      ],
+      "accept": [
+        "模拟 transport 验证路由分支，网络回调不能直接更新 Widgets。",
+        "同一业务线程顺序访问 SQLite 和会话状态，shutdown 可重复调用。"
+      ],
+      "milestone": "M3",
+      "testFile": "framework/tests/acceptance/test_M3_05.cpp",
+      "allowedFiles": [
+        "framework/src/application.cpp",
+        "framework/include/ccfw/application.hpp",
+        "framework/tests/acceptance/test_M3_05.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M3-05.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "单业务线程事件边界、单次 64 条入站预算、账号/聊天/文件/群/状态分发、未知消息报错、幂等关闭；接入真实文件服务和群服务。",
+        "frameworkAcceptance": "完整 implementation-debug 20/20 CTest 通过，34.82 秒；同名任务 CTest 已注册。",
+        "originalTests": "原项目 core-debug unit 通过，7.08 秒。",
+        "logs": [
+          "build/framework-implementation/Testing/Temporary/LastTest.log",
+          "../build/core/Testing/Temporary/LastTest.log"
+        ],
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M3-05",
+          "seconds": 0.434878,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M4-01",
+      "title": "端到端文本与可靠发件箱",
+      "status": "done",
+      "deps": [
+        "M1-03",
+        "M2-03",
+        "M3-05"
+      ],
+      "files": [
+        "framework/src/session_service.cpp",
+        "framework/src/chat_service.cpp",
+        "framework/include/ccfw/chat_service.hpp",
+        "common/protocol/messages.hpp",
+        "common/protocol/messages.cpp"
+      ],
+      "steps": [
+        "按 contracts.md v2 消息内层绑定 ID/双方/群 ID/kind，协商版本后才发送。",
+        "无会话先取束并保存有界待发项；encryptAndCommit 一次提交 ratchet/history/outbox。",
+        "receive 候选解密、校验路由、去重和持久化之后才 ACK、发布事件。"
+      ],
+      "accept": [
+        "两客户端真实 TLS 收发；服务端只得到消息/文件密文与元数据。",
+        "篡改 groupId/收件人/kind 被拒；重复收包仅显示一次。",
+        "数据库提交失败不发送；连接失败保留原密文用于重发。"
+      ],
+      "milestone": "M4",
+      "testFile": "framework/tests/acceptance/test_M4_01.cpp",
+      "allowedFiles": [
+        "framework/src/session_service.cpp",
+        "framework/src/chat_service.cpp",
+        "framework/include/ccfw/chat_service.hpp",
+        "common/protocol/messages.hpp",
+        "common/protocol/messages.cpp",
+        "framework/tests/acceptance/test_M4_01.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M4-01.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "6 个验收用例：真实 TLS 双向 UTF-8、显式身份确认、路由/密文篡改、去重、收发提交失败、首链乱序、同时发起、原密文重发及服务端数据库无聊天明文。",
+        "frameworkAcceptance": "完整 implementation-debug 20/20 CTest 通过，34.82 秒；同名任务 CTest 已注册。",
+        "originalTests": "原项目 core-debug unit 通过，7.08 秒。",
+        "logs": [
+          "build/framework-implementation/Testing/Temporary/LastTest.log",
+          "../build/core/Testing/Temporary/LastTest.log"
+        ],
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M4-01",
+          "seconds": 6.78396,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M4-02",
+      "title": "文件分块与边界正确性",
+      "status": "done",
+      "deps": [
+        "M4-01"
+      ],
+      "files": [
+        "framework/src/file_transfer.cpp",
+        "framework/include/ccfw/file_transfer.hpp",
+        "client/core/files.cpp",
+        "tests/test_integration.cpp",
+        "framework/CMakeLists.txt"
+      ],
+      "steps": [
+        "先修 openChunk 对 cipher.size()<16 的错误限制：cipher 和 tag 分开时短密文合法。",
+        "随机 fileKey，经会话 file_meta 加密发送；64KiB 流式读写，校验各块/顺序/标签。",
+        "file_ack 绑定认证发送者和传输 ID；文件名仅本地安全 basename，避免路径越界。"
+      ],
+      "accept": [
+        "0、1、15、16、65535、65536、65537 字节往返哈希一致。",
+        "重复、乱序、篡改、错误 ACK 不提高已验证进度。",
+        "内存使用不随文件全长线性增长，完成前不暴露最终文件。"
+      ],
+      "milestone": "M4",
+      "testFile": "framework/tests/acceptance/test_M4_02.cpp",
+      "allowedFiles": [
+        "framework/src/file_transfer.cpp",
+        "framework/include/ccfw/file_transfer.hpp",
+        "client/core/files.cpp",
+        "tests/test_integration.cpp",
+        "framework/CMakeLists.txt",
+        "framework/tests/acceptance/test_M4_02.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M4-02.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "6 个验收用例：0/1/15/16/65535/65536/65537 字节真实 TLS 往返、短块原语、乱序/篡改/重复/错对端、64 块限额、落盘后提交失败无 ACK、流式准备和认证文件签收。",
+        "frameworkAcceptance": "完整 implementation-debug 20/20 CTest 通过，34.82 秒；同名任务 CTest 已注册。",
+        "originalTests": "原项目 core-debug unit 通过，7.08 秒。",
+        "logs": [
+          "build/framework-implementation/Testing/Temporary/LastTest.log",
+          "../build/core/Testing/Temporary/LastTest.log"
+        ],
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M4-02",
+          "seconds": 5.14647,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M4-03",
+      "title": "跨进程文件续传",
+      "status": "done",
+      "deps": [
+        "M4-02",
+        "M3-03"
+      ],
+      "files": [
+        "framework/src/file_transfer.cpp",
+        "framework/include/ccfw/file_transfer.hpp"
+      ],
+      "steps": [
+        "持久化 fileKey、fileId、下一连续序号、前块标签、源文件摘要和 .part 路径。",
+        "先 flush 数据，再提交 checkpoint，再 ACK；恢复时截断未确认尾部。",
+        "重传同一块复用相同密文；源文件变化中止旧传输。"
+      ],
+      "accept": [
+        "发送/接收进程中断后重启恢复，最终 SHA-256 一致。",
+        "修改源文件后拒绝复用旧 fileKey+seq；取消行为和临时文件保留策略明确。"
+      ],
+      "milestone": "M4",
+      "testFile": "framework/tests/acceptance/test_M4_03.cpp",
+      "allowedFiles": [
+        "framework/src/file_transfer.cpp",
+        "framework/include/ccfw/file_transfer.hpp",
+        "framework/tests/acceptance/test_M4_03.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M4-03.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "2 个验收用例：真实发送/接收子进程均在 128 KiB 检查点后强制终止，重启完成 2 MiB+1 字节传输；修剪未提交尾部，网络审计确认原密文重发，源文件同尺寸变化与临时文件前缀篡改拒绝。保留 M4-03-before-shutdown-synchronization.log；最终测试等待双方收据清空再退出，避免测试进程提前关闭丢弃出站收据。",
+        "frameworkAcceptance": "完整 implementation-debug 20/20 CTest 通过，34.82 秒；同名任务 CTest 已注册。",
+        "originalTests": "原项目 core-debug unit 通过，7.08 秒。",
+        "logs": [
+          "build/framework-implementation/Testing/Temporary/LastTest.log",
+          "../build/core/Testing/Temporary/LastTest.log"
+        ],
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M4-03",
+          "seconds": 9.85535,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M4-04",
+      "title": "Qt 页面与业务线程适配",
+      "status": "done",
+      "deps": [
+        "M4-01",
+        "M4-02"
+      ],
+      "files": [
+        "framework/gui/main.cpp",
+        "framework/gui/main_window.hpp",
+        "framework/gui/main_window.cpp",
+        "framework/CMakeLists.txt"
+      ],
+      "steps": [
+        "把账号/会话/文件/群页拆小 Widget，沿用既定 ClientApplication 与 service 接口。",
+        "GUI 命令进入单业务 worker 队列，ClientEvent 回 GUI 线程；进度与错误如实显示。",
+        "窗口关闭先停止入队，worker shutdown/join 后销毁对象。"
+      ],
+      "accept": [
+        "desktop-debug 可编译，两个真实 GUI 登录互聊和文件进度可见。",
+        "慢网/大文件/PBKDF2 时界面仍响应；关闭时没有悬空回调。"
+      ],
+      "milestone": "M4",
+      "testFile": "framework/tests/acceptance/test_M4_04.cpp",
+      "allowedFiles": [
+        "framework/gui/main.cpp",
+        "framework/gui/main_window.hpp",
+        "framework/gui/main_window.cpp",
+        "framework/CMakeLists.txt",
+        "framework/tests/acceptance/test_M4_04.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M4-04.md",
+      "evidence": {
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M4-04",
+          "seconds": 6.07342,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        },
+        "change": "完成账号、私聊、文件、群聊四页，BusinessWorker 与 GUI 命令/事件队列接入；客户端核心保持无 Qt/server。Qt Test 驱动两个独立原生窗口，验证注册、指纹核对、互聊、1 MiB+15 字节文件进度、群聊与正常关闭。归档 GUI 样本心跳 454/467 次、最大间隔 55/48 ms。正式 Release 包另经 M6-01 验证。",
+        "remoteIpv6Regression": {
+          "date": "2026-09-14",
+          "result": "passed",
+          "junit": "../artifacts/linux-deployment/gui-receipt-regression.xml",
+          "remoteWorkflow": "../artifacts/linux-deployment/remote-gui-20260914-2/result.json",
+          "serviceRestart": "../artifacts/linux-deployment/remote-gui-restart-20260914-final/result.json",
+          "scope": "追加远端 Linux 部署验收；可配置 IPv6/证书名称，验证具体消息签收，重启后登录原账号并核对身份保留。原 22 项完成状态与历史证据保留。"
+        }
+      }
+    },
+    {
+      "id": "M5-01",
+      "title": "群聊逐成员加密和授权",
+      "status": "done",
+      "deps": [
+        "M4-01"
+      ],
+      "files": [
+        "framework/src/group_service.cpp",
+        "framework/src/server_services.cpp",
+        "framework/include/ccfw/group_service.hpp",
+        "server/router/router.cpp",
+        "server/storage/storage.cpp",
+        "common/protocol/messages.cpp",
+        "common/protocol/messages.hpp"
+      ],
+      "steps": [
+        "群成员元数据版本化，服务器校验发件人与收件人均在群内。",
+        "客户端排除自己后逐成员加密，统一 logicalMessageId，每人独立传输 ID。",
+        "记录部分失败，重试只针对失败成员，禁止服务器拿到共享群密钥。"
+      ],
+      "accept": [
+        "三客户端群聊，服务器看不到正文；非成员发/收拒绝。",
+        "成员离线/单人失败不会抹掉其他人的成功结果。"
+      ],
+      "milestone": "M5",
+      "testFile": "framework/tests/acceptance/test_M5_01.cpp",
+      "allowedFiles": [
+        "framework/src/group_service.cpp",
+        "framework/src/server_services.cpp",
+        "framework/include/ccfw/group_service.hpp",
+        "server/router/router.cpp",
+        "server/storage/storage.cpp",
+        "common/protocol/messages.cpp",
+        "common/protocol/messages.hpp",
+        "framework/tests/acceptance/test_M5_01.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M5-01.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "4 个验收用例：真实三客户端群聊、逐成员不同密文、离线成员群快照及补投、失败成员单独重试、版本冲突/旧快照拒绝、群报告提交崩溃幂等，以及真实路由拒绝非成员发送/接收。",
+        "frameworkAcceptance": "完整 implementation-debug 20/20 CTest 通过，34.82 秒；同名任务 CTest 已注册。",
+        "originalTests": "原项目 core-debug unit 通过，7.08 秒。",
+        "logs": [
+          "build/framework-implementation/Testing/Temporary/LastTest.log",
+          "../build/core/Testing/Temporary/LastTest.log"
+        ],
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M5-01",
+          "seconds": 1.26031,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M5-02",
+      "title": "在线与输入提示",
+      "status": "done",
+      "deps": [
+        "M3-05",
+        "M5-01"
+      ],
+      "files": [
+        "framework/src/group_service.cpp",
+        "framework/src/application.cpp",
+        "framework/gui/main_window.cpp"
+      ],
+      "steps": [
+        "处理 presence/typing 事件；输入提示节流并设置到期时间。",
+        "断线清除在线状态，重连重新取权威快照。"
+      ],
+      "accept": [
+        "输入提示会自动过期；重复事件不导致 UI 抖动。",
+        "离线状态无需重启 GUI 才更新。"
+      ],
+      "milestone": "M5",
+      "testFile": "framework/tests/acceptance/test_M5_02.cpp",
+      "allowedFiles": [
+        "framework/src/group_service.cpp",
+        "framework/src/application.cpp",
+        "framework/gui/main_window.cpp",
+        "framework/tests/acceptance/test_M5_02.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M5-02.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "3 个验收用例：单调时钟每秒节流、三秒自动到期、重复提示不抖动、断线清空；真实 TLS 登入/断开/重连在线变化与权威用户快照。",
+        "frameworkAcceptance": "完整 implementation-debug 20/20 CTest 通过，34.82 秒；同名任务 CTest 已注册。",
+        "originalTests": "原项目 core-debug unit 通过，7.08 秒。",
+        "logs": [
+          "build/framework-implementation/Testing/Temporary/LastTest.log",
+          "../build/core/Testing/Temporary/LastTest.log"
+        ],
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M5-02",
+          "seconds": 1.07958,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M5-03",
+      "title": "重启恢复和密文重发",
+      "status": "done",
+      "deps": [
+        "M4-01",
+        "M4-03"
+      ],
+      "files": [
+        "framework/src/chat_service.cpp",
+        "framework/src/account_service.cpp",
+        "framework/src/application.cpp"
+      ],
+      "steps": [
+        "启动先 load 快照再登录，恢复身份、信任、ratchet、outbox 和 transfer。",
+        "flushOutbox 只重发原密文，签收前不能删本地待发项。",
+        "连接错误、存储冲突或损坏时停止相关操作并报告可恢复状态。"
+      ],
+      "accept": [
+        "跨进程离线补投可解密，重发不重复展示。",
+        "不会因同一消息重新加密而重复使用状态/产生多条展示。"
+      ],
+      "milestone": "M5",
+      "testFile": "framework/tests/acceptance/test_M5_03.cpp",
+      "allowedFiles": [
+        "framework/src/chat_service.cpp",
+        "framework/src/account_service.cpp",
+        "framework/src/application.cpp",
+        "framework/tests/acceptance/test_M5_03.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M5-03.md",
+      "evidence": {
+        "date": "2026-09-14",
+        "change": "1 个验收用例：真实聊天发送进程崩溃、接收进程崩溃和丢弃签收后，重新启动双方，原 ID/原密文重发、历史仅一条、接收棘轮状态不重复推进。",
+        "frameworkAcceptance": "完整 implementation-debug 20/20 CTest 通过，34.82 秒；同名任务 CTest 已注册。",
+        "originalTests": "原项目 core-debug unit 通过，7.08 秒。",
+        "logs": [
+          "build/framework-implementation/Testing/Temporary/LastTest.log",
+          "../build/core/Testing/Temporary/LastTest.log"
+        ],
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M5-03",
+          "seconds": 1.4007,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        }
+      }
+    },
+    {
+      "id": "M6-01",
+      "title": "演示与方案书证据",
+      "status": "done",
+      "deps": [
+        "M4-04",
+        "M5-02",
+        "M5-03"
+      ],
+      "files": [
+        "README.md",
+        "docs/",
+        "scripts/",
+        "artifacts/"
+      ],
+      "steps": [
+        "生成 1 服务器+2 GUI 演示和三客户端群测，记录真实命令/时间/结果。",
+        "未来明确要求生成 docx 时再按用户 Word 模板及 Word COM 渲染流程制作。",
+        "方案书区分自定义简化协议与 Signal 标准，说明元数据可见、身份验证和本地保护边界。"
+      ],
+      "accept": [
+        "方案书和 README 的每项完成声明能对应测试或实际演示。",
+        "GUI、文件续传、群聊、恢复均有各自证据；失败项明确列出。"
+      ],
+      "milestone": "M6",
+      "testFile": "framework/tests/acceptance/test_M6_01.cpp",
+      "allowedFiles": [
+        "README.md",
+        "docs/",
+        "scripts/",
+        "artifacts/",
+        "framework/tests/acceptance/test_M6_01.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "card": "tasks/M6-01.md",
+      "evidence": {
+        "finalRegression": {
+          "date": "2026-09-14",
+          "test": "M6-01",
+          "seconds": 3.55328,
+          "result": "passed",
+          "junit": "../artifacts/desktop-final-tests.xml"
+        },
+        "change": "交付 README、启动/打包脚本、Release Windows x64 运行包及 11 页方案书。Word COM 导出 PDF，Poppler 渲染并逐页打开检查；M6-01 核对包内文件摘要、文档 QA 对应哈希、真实发布版服务端 TLS/认证/密文往返、GUI 启动响应与正常关闭。子进程 PATH 仅含包目录及 Windows。启动脚本另验证一服务端加两 GUI 正常退出。"
+      }
+    },
+    {
+      "id": "M7-01",
+      "title": "窗口文件传输与旧方式移除",
+      "status": "done",
+      "deps": [
+        "M4-02",
+        "M4-03",
+        "M4-04"
+      ],
+      "files": [
+        "framework/src/file_transfer.cpp",
+        "framework/src/local_store.cpp",
+        "framework/src/chat_service.cpp",
+        "framework/src/snapshot_codec.hpp",
+        "framework/src/wire_helpers.hpp",
+        "framework/include/ccfw/types.hpp",
+        "framework/include/ccfw/file_transfer.hpp",
+        "framework/tests/acceptance/",
+        "framework/scripts/verify.ps1",
+        "scripts/package-remote-windows.ps1",
+        "scripts/test-remote-package.py",
+        "scripts/test-remote-gui.py",
+        "docs/"
+      ],
+      "steps": [
+        "实现有界窗口、累计落盘确认和 CBOR 载荷",
+        "删除逐块等待与旧文件编码路径",
+        "验证崩溃恢复及发布版公网性能"
+      ],
+      "accept": [
+        "完整性、边界与存储测试通过",
+        "新版本明显提升实测吞吐",
+        "交付新版客户端和可复现证据"
+      ],
+      "milestone": "M7",
+      "testFile": "framework/tests/acceptance/test_M7_01.cpp",
+      "card": "tasks/M7-01.md",
+      "evidence": {
+        "design": "../docs/file-transfer-upgrade.md",
+        "finalRegression": {
+          "date": "2026-09-15",
+          "test": "M7-01",
+          "result": "passed",
+          "suitePassed": 23,
+          "suiteTotal": 23,
+          "suiteSeconds": 27.07,
+          "junit": "../artifacts/file-transfer-upgrade/full-tests.xml"
+        },
+        "remote": "../artifacts/file-transfer-upgrade/final-release/result.json",
+        "oldAccountUpgrade": "../artifacts/file-transfer-upgrade/old-account-upgrade/result.json",
+        "package": "../artifacts/file-transfer-upgrade/package.json",
+        "delivery": "../artifacts/CipherChat-Remote-Windows-x64-window.zip",
+        "change": "正式客户端移除逐块等待、旧 JSON 块和单个 pendingChunk；使用 16 块窗口、4 块批量落盘、加密累计 ACK、严格平面 CBOR、受完整密文校验的快照缓存。旧账号可用，旧活动传输不再续传或重发，旧记录不占新名额。最终公网同文件 11.194 秒降至 4.880 秒；原密文恢复、失败提交、畸形输入及旧队列验收通过。"
+      }
+    },
+    {
+      "id": "M7-02",
+      "title": "中心服务器迁移与账号身份保留",
+      "status": "done",
+      "deps": [
+        "M7-01"
+      ],
+      "files": [
+        "framework/gui/",
+        "framework/tests/acceptance/test_M7_02.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "scripts/",
+        "docs/"
+      ],
+      "steps": [
+        "构建兼容新 Linux 的服务端",
+        "按用户确认全新部署，旧数据不迁移",
+        "验证新公网端口及真实业务并打包"
+      ],
+      "accept": [
+        "新账号及数据独立，服务 active/enabled",
+        "新服务器公网 TLS 与文本文件群聊通过",
+        "新包及部署记录完整"
+      ],
+      "milestone": "M7",
+      "testFile": "framework/tests/acceptance/test_M7_02.cpp",
+      "card": "tasks/M7-02.md",
+      "evidence": {
+        "windows": "artifacts/server-migration-20260915/windows-regression.xml",
+        "target_unit": "artifacts/server-migration-20260915/server-unit.xml",
+        "target_network": "artifacts/server-migration-20260915/server-network.xml",
+        "tunnel_business": "artifacts/server-migration-20260915/tunnel-business/result.json",
+        "restart": "artifacts/server-migration-20260915/tunnel-restart/result.json",
+        "package": "artifacts/server-migration-20260915/package-final-validation.json",
+        "report": "docs/server2-deployment.md",
+        "public_tls": "artifacts/server-migration-20260915/public-open-probe.json",
+        "public_business": "artifacts/server-migration-20260915/public-business/result.json",
+        "public_throughput": "artifacts/server-migration-20260915/public-throughput-16m/result.json",
+        "public_restart": "artifacts/server-migration-20260915/public-restart/result.json"
+      }
+    },
+    {
+      "id": "M8-01",
+      "title": "混合文件传输：P2P 优先与 Relay 回退",
+      "status": "done",
+      "deps": [
+        "M7-02"
+      ],
+      "files": [
+        "framework/include/ccfw/direct_file_channel.hpp",
+        "framework/src/direct_file_channel.cpp",
+        "framework/src/file_transfer.cpp",
+        "framework/src/snapshot_codec.hpp",
+        "framework/gui/business_worker.cpp",
+        "framework/gui/main_window.cpp",
+        "framework/tests/acceptance/test_M8_01.cpp",
+        "docs/hybrid-p2p-relay.md",
+        "framework/gui/main.cpp",
+        "framework/gui/main_window.hpp",
+        "framework/gui/business_worker.hpp",
+        "framework/include/ccfw/file_transfer.hpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tests/acceptance/gui_driver.cpp",
+        "framework/tests/acceptance/test_M8_preferences.cpp",
+        "framework/docs/contracts.md",
+        "scripts/test-remote-gui.py",
+        "scripts/test-remote-package.py",
+        "docs/hybrid-verification-20260916.md",
+        "docs/remote-client-hybrid-20260916.md"
+      ],
+      "steps": [
+        "实现一次性 token 认证的临时直连通道，网络线程只入队。",
+        "文件元数据通过中心服务器控制面交换直连端点；直连失败自动回退既有 Relay。",
+        "验证直连 envelope、错误 token、窗口传输与既有断点续传回归。"
+      ],
+      "accept": [
+        "IPv4/IPv6 直连、错误 token 和超限帧拒绝通过；真实文件 P2P 完成且无 Relay 文件块。",
+        "不可达、中途关闭 P2P、重启续传均完整传完文件并逐字节匹配；并发文件不抢占通道。",
+        "26/26 CTest、公网控制面双 GUI 的直连/纯中转与重新登录通过；正式包连续三次启动未发现 TCP 监听。",
+        "公网测试仍为本机双客户端；未宣称两台实体设备或跨校园网 P2P 已验证。"
+      ],
+      "milestone": "M8",
+      "testFile": "framework/tests/acceptance/test_M8_01.cpp",
+      "card": "tasks/M8-01.md",
+      "evidence": {
+        "design": "../docs/hybrid-p2p-relay.md",
+        "frameworkAcceptance": "build/framework-hybrid：framework-contracts、M7-01、M8-01 通过；全套 22/22 CTest 通过。M8-01 覆盖 token 拒绝、P2P 4 块文件传输、最终文件摘要和无直连端的 Relay fallback。",
+        "linuxSyntax": "WSL g++ -std=c++20 -fsyntax-only framework/src/direct_file_channel.cpp 通过；完整 Linux 框架构建因环境缺少 SQLite3 开发包未运行。",
+        "change": "控制面继续使用中心服务器，数据面新增一次性 token 认证临时 TCP 直连；直连失败、超时或中断自动回退既有 Relay。保留 CCF3、端到端加密、16 块窗口、4 块批量持久化、断点续传和 SHA-256。",
+        "limitation": "公网跨网络 P2P、NAT 穿透、系统防火墙策略和长期压力测试尚未验证。",
+        "package": "../artifacts/CipherChat-Remote-Windows-x64-hybrid-20260915-r2.zip",
+        "packageManifest": "../artifacts/CipherChat-Remote-Windows-x64-hybrid-20260915-r2/manifest.json",
+        "packageSmoke": "../artifacts/hybrid-package-smoke-20260915",
+        "serverV2Probe": "IPv6 TCP 55220 + TLS 1.3 + v2 hello probe passed against 2603:1040:f02:d::21d.",
+        "remoteGuiAttempt": "../artifacts/hybrid-remote-gui-20260915/result.json; GUI driver reached stage 1 but public account workflow timed out, so no cross-device P2P claim is made.",
+        "priorAcceptanceClarification": "2026-09-15 的 fallback 测试仅检查状态标记，不证明完整中转；本次追加实际完整传输、断线、重启验收，保留旧记录。",
+        "latestVerification": "../docs/hybrid-verification-20260916.md",
+        "fullRegression20260916": "../artifacts/hybrid-verification-20260916/ctest.log：26/26 passed，50.67 秒。M8-01 9 个业务用例，另有 M8-preferences。",
+        "publicAuto20260916": "../artifacts/hybrid-public-20260916-auto/result.json：16 MiB，9217 ms，两个 GUI 最终 path=2；中心公网、文件本机 P2P。",
+        "publicRelay20260916": "../artifacts/hybrid-public-20260916-relay/result.json：1 MiB+15，2144 ms，path=0；双向聊天/群聊通过。",
+        "publicRestart20260916": "../artifacts/hybrid-public-20260916-restart/result.json：原账号登录、身份和会话保持；仅重启客户端，未重启服务器。",
+        "package20260916": "../artifacts/CipherChat-Remote-Windows-x64-hybrid-20260916.zip",
+        "packageSmoke20260916": "../artifacts/hybrid-package-20260916.json：38 文件/ZIP/证书/构建一致，连续三次正式 GUI 启动及正常退出，无 TCP 监听。",
+        "linuxSyntax20260916": "WSL g++ -std=c++20 -fsyntax-only direct_file_channel.cpp passed；未进行完整 Linux 客户端运行验收。"
+      }
+    },
+    {
+      "id": "M8-02",
+      "title": "聊天页集成文件传输",
+      "status": "done",
+      "deps": [
+        "M8-01"
+      ],
+      "files": [
+        "framework/gui/main_window.cpp",
+        "framework/tests/acceptance/gui_driver.cpp",
+        "framework/tests/acceptance/test_M4_04.cpp",
+        "README.md",
+        "framework/README.md",
+        "docs/chat-files-20260916.md",
+        "docs/remote-client-chat-files-20260916.md",
+        "docs/collapsible-files-20260916.md",
+        "docs/remote-client-collapsible-files-20260916.md",
+        "启动CipherChat.bat"
+      ],
+      "steps": [
+        "合并文件发送与当前会话进度，保留直连偏好、恢复与取消。",
+        "双 GUI 测试发送、筛选与选择保持，检查普通和最小窗口。",
+        "生成新包并更新启动脚本。"
+      ],
+      "accept": [
+        "聊天页文件发送、接收、校验通过，群聊可用。",
+        "筛选及选择保持通过，偏好保持兼容；默认折叠，展开可操作，收起后文件继续完成且状态可见。",
+        "正式包与启动入口验证通过。"
+      ],
+      "milestone": "M8",
+      "testFile": "framework/tests/acceptance/test_M4_04.cpp",
+      "card": "tasks/M8-02.md",
+      "evidence": {
+        "summary": "../docs/chat-files-20260916.md",
+        "guiRegression": "../artifacts/chat-files-verification-20260916/gui-tests.log：M4-04/M7-02/M8-preferences 3/3，9.24 秒。",
+        "remoteGui": "../artifacts/chat-files-public-20260916/result.json：聊天页文件1MiB+15、文本、群聊、筛选和选中保持通过；一机双 GUI。",
+        "screens": "../artifacts/chat-files-verification-20260916/alice-screens：默认/最小窗口检查通过。",
+        "package": "../artifacts/CipherChat-Remote-Windows-x64-chat-files-20260916.zip",
+        "packageSmoke": "../artifacts/chat-files-package-20260916.json：38文件/ZIP/证书/正式GUI启动通过。",
+        "launcher": "../启动CipherChat.bat 指向新包；之前版本备份 build/launcher-before-chat-files-20260916.bat。",
+        "priorFailure": "../artifacts/chat-files-verification-20260916/prior-driver-race.log：测试驱动完成文件竞争，已修为临时文件rename发布。",
+        "collapsibleFollowup": "../docs/collapsible-files-20260916.md：文件功能默认折叠，收起后继续传输，3/3 GUI 回归通过（10.10秒）。",
+        "collapsibleRegression": "../artifacts/collapsible-files-verification-20260916/gui-tests.log",
+        "collapsibleScreens": "../artifacts/collapsible-files-verification-20260916/alice-screens：普通和最小窗口展开/收起已检查。",
+        "collapsiblePackage": "../artifacts/CipherChat-Remote-Windows-x64-collapsible-files-20260916.zip",
+        "collapsiblePackageSmoke": "../artifacts/collapsible-files-package-20260916.json：38文件/ZIP/证书/正式GUI启动退出/无监听通过。"
+      }
+    },
+    {
+      "id": "M8-03",
+      "title": "精简账号与安全信息展示",
+      "status": "done",
+      "deps": [
+        "M8-02"
+      ],
+      "files": [
+        "framework/gui/main_window.cpp",
+        "framework/tests/acceptance/gui_driver.cpp",
+        "framework/tests/acceptance/test_M4_04.cpp",
+        "framework/README.md",
+        "README.md",
+        "docs/clean-ui-20260916.md",
+        "docs/remote-client-clean-ui-20260916.md",
+        "docs/certificate-ui-20260916.md",
+        "docs/remote-client-auto-cert-20260916.md",
+        "启动CipherChat.bat"
+      ],
+      "steps": [
+        "移除常驻指纹信息，连接配置折叠为高级设置。",
+        "保留独立安全详情与身份确认，适配自动化驱动。",
+        "构建、实际双GUI验证、截图检查、另存新包并更新启动。"
+      ],
+      "accept": [
+        "默认主界面不展示指纹、地址或证书；证书配置从高级设置移除，自动沿用启动值，其余高级配置可按需访问。",
+        "真实GUI登录、身份确认、聊天文件群聊及相关回归通过。",
+        "新包与启动入口验证通过。"
+      ],
+      "milestone": "M8",
+      "testFile": "framework/tests/acceptance/test_M4_04.cpp",
+      "card": "tasks/M8-03.md",
+      "evidence": {
+        "summary": "../docs/clean-ui-20260916.md",
+        "guiRegression": "../artifacts/clean-ui-verification-20260916/gui-tests.log：3/3，7.05 秒。",
+        "screens": "../artifacts/clean-ui-verification-20260916/alice-screens：默认账号无地址/证书/指纹，设置可展开，详情浅色背景已检查。",
+        "publicRelogin": "../artifacts/clean-ui-public-relogin-20260916/result.json：原公网账号、身份、会话和文本签收通过。",
+        "package": "../artifacts/CipherChat-Remote-Windows-x64-clean-ui-20260916-r2.zip",
+        "packageSmoke": "../artifacts/clean-ui-package-r2-20260916.json：38文件/ZIP/证书/启动退出/无监听通过。",
+        "boundary": "仅删除常驻界面展示，必要身份核对保留为按需安全详情；TLS、密钥和人工信任机制不变。",
+        "certificateUiFollowup": "../docs/certificate-ui-20260916.md：证书配置全部从界面移除，使用启动配置；3/3 GUI 回归通过（6.71秒），设置截图检查通过。",
+        "certificateUiRegression": "../artifacts/auto-cert-verification-20260916/gui-tests.log",
+        "certificateUiPackage": "../artifacts/CipherChat-Remote-Windows-x64-auto-cert-20260916.zip",
+        "certificateUiPackageSmoke": "../artifacts/auto-cert-package-20260916.json：38文件/ZIP/证书/启动退出/无监听通过。"
+      }
+    },
+    {
+      "id": "M8-04",
+      "title": "文件卡片融入聊天时间线",
+      "status": "done",
+      "deps": [
+        "M8-02",
+        "M8-03"
+      ],
+      "files": [
+        "framework/gui/main_window.cpp",
+        "framework/include/ccfw/types.hpp",
+        "framework/src/file_transfer.cpp",
+        "framework/src/snapshot_codec.hpp",
+        "framework/docs/contracts.md",
+        "framework/tests/acceptance/gui_driver.cpp",
+        "framework/tests/acceptance/test_M4_04.cpp",
+        "framework/tests/acceptance/test_M4_02.cpp",
+        "framework/tasks.json",
+        "framework/README.md",
+        "README.md",
+        "docs/timeline-files-20260916.md",
+        "docs/remote-client-timeline-files-20260916.md",
+        "启动CipherChat.bat"
+      ],
+      "steps": [
+        "保存文件发送时间并兼容旧记录。",
+        "文件卡片和文字合并排序，进度原位更新。",
+        "核心与GUI实际业务验证、截图检查、新包及启动入口更新。"
+      ],
+      "accept": [
+        "新文件显示在前后文字之间，进度不改变时间位置。",
+        "重登录后文件时间与位置保持，旧记录可读。",
+        "实际文件、聊天、群聊、偏好及包验证通过。"
+      ],
+      "milestone": "M8",
+      "testFile": "framework/tests/acceptance/test_M4_04.cpp",
+      "card": "tasks/M8-04.md",
+      "evidence": {
+        "summary": "../docs/timeline-files-20260916.md",
+        "fullRegression": "../artifacts/timeline-files-verification-20260916/full-tests.log：26/26，64.48秒。",
+        "guiVisualRegression": "../artifacts/timeline-files-verification-20260916/gui-visual-tests.log：M4-04补充最小窗口滚动可达检查通过，5.77秒。",
+        "gui": "../artifacts/timeline-files-verification-20260916：双端文字/文件/文字顺序、原位更新、真实文件、群聊与重登录原时间/身份保持。",
+        "package": "../artifacts/CipherChat-Remote-Windows-x64-timeline-files-20260916.zip",
+        "packageSmoke": "../artifacts/timeline-files-package-20260916.json：38文件/ZIP/证书/启动响应退出/无监听通过。",
+        "boundary": "旧文件缺发送时间时显示历史文件时间未记录；本轮未重跑公网或跨设备。"
+      }
+    },
+    {
+      "id": "M8-05",
+      "title": "测试与 Qt 界面解耦",
+      "status": "done",
+      "deps": [
+        "M8-04"
+      ],
+      "files": [
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tests/acceptance/gui_driver.cpp",
+        "framework/tests/acceptance/test_M4_04.cpp",
+        "framework/tests/acceptance/test_M7_02_runtime.cpp",
+        "framework/tests/acceptance/test_M8_preferences.cpp",
+        "framework/tests/ui/qt_client_page.hpp",
+        "framework/tests/ui/qt_client_page.cpp",
+        "framework/tests/ui/test_navigation.cpp",
+        "framework/scripts/verify.ps1",
+        "framework/README.md",
+        "framework/docs/testing-boundaries.md",
+        "framework/tasks/M8-05.md",
+        "framework/tasks.json"
+      ],
+      "steps": [
+        "将已有业务 worker 独立编译为无 Qt runtime。",
+        "用语义适配器隔离控件与布局，迁移业务验收覆盖到无窗口测试。",
+        "分层执行业务、GUI、布局及交付检查并登记证据。"
+      ],
+      "accept": [
+        "业务回归可独立于 Qt 编译执行。",
+        "页签改名、重排、增加后交互动作仍通过。",
+        "原 GUI 迁移及业务端到端断言保留，布局有独立入口。"
+      ],
+      "milestone": "M8",
+      "testFile": "framework/tests/acceptance/test_M7_02_runtime.cpp",
+      "card": "tasks/M8-05.md",
+      "evidence": {
+        "summary": "docs/testing-boundaries.md",
+        "core": "artifacts/test-decoupling-20260917/core-tests.log：23/23，51.37秒。",
+        "ui": "artifacts/test-decoupling-20260917/ui-tests-fixed.log：4/4，18.03秒。",
+        "layout": "artifacts/test-decoupling-20260917/layout-tests-fixed.log：1/1，9.45秒。",
+        "delivery": "artifacts/test-decoupling-20260917/delivery-tests.log：1/1，6.18秒。",
+        "dependencies": "artifacts/test-decoupling-20260917/dependency-check.json：核心71条编译命令无Qt引用，runtime迁移程序无Qt DLL。",
+        "boundary": "GUI适配器仍依赖Qt和具体控件；业务独立。未重新制作发布包或重跑公网。"
+      }
+    },
+    {
+      "id": "M8-06",
+      "title": "GLM / Codex 双界面",
+      "status": "done",
+      "deps": [
+        "M8-05"
+      ],
+      "milestone": "M8",
+      "files": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/codex_theme.hpp",
+        "framework/tests/ui/test_designs.cpp"
+      ],
+      "testFile": "framework/tests/ui/test_designs.cpp",
+      "card": "tasks/M8-06.md",
+      "evidence": {
+        "summary": "../docs/dual-design-20260919.md",
+        "ui": "artifacts/dual-design-20260919/codex-tests.log",
+        "migrationRecheck": "artifacts/dual-design-20260919/glm-migration-recheck.log"
+      }
+    },
+    {
+      "id": "M8-07",
+      "title": "任意主题色与参考取色面板",
+      "status": "done",
+      "deps": [
+        "M8-06"
+      ],
+      "milestone": "M8",
+      "files": [
+        "framework/gui/color_picker.hpp",
+        "framework/gui/accent_theme.hpp",
+        "framework/gui/main_window.cpp",
+        "framework/gui/theme.cpp",
+        "framework/gui/theme.hpp",
+        "framework/tests/ui/test_colors.cpp"
+      ],
+      "testFile": "framework/tests/ui/test_colors.cpp",
+      "card": "tasks/M8-07.md",
+      "evidence": {
+        "summary": "../docs/theme-colors-20260919.md",
+        "ui": "artifacts/theme-colors-20260919/ui-tests.log",
+        "finalCheck": "artifacts/theme-colors-20260919/final-check.log",
+        "package": "artifacts/theme-colors-20260919/package-check.json"
+      }
+    },
+    {
+      "id": "M8-08",
+      "title": "深浅色模式",
+      "status": "done",
+      "deps": [
+        "M8-07"
+      ],
+      "milestone": "M8",
+      "files": [
+        "framework/gui/appearance_theme.hpp",
+        "framework/gui/main_window.cpp",
+        "framework/gui/theme.cpp",
+        "framework/tests/ui/test_appearance.cpp",
+        "framework/tests/ui/qt_client_page.hpp",
+        "framework/tests/ui/qt_client_page.cpp",
+        "framework/tests/acceptance/gui_driver.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "testFile": "framework/tests/ui/test_appearance.cpp",
+      "card": "tasks/M8-08.md",
+      "evidence": {
+        "summary": "../docs/appearance-20260919.md",
+        "ui": "artifacts/appearance-20260919/dark-ui-tests.log",
+        "modes": "artifacts/appearance-20260919/appearance-tests.log",
+        "package": "artifacts/appearance-20260919/package-check.json",
+        "switch": "../docs/appearance-switch-20260919.md",
+        "switchTest": "artifacts/appearance-switch-20260919/switch-tests.log"
+      }
+    },
+    {
+      "id": "M9-01",
+      "title": "中心服务器增量更新",
+      "status": "done",
+      "deps": [
+        "M8-08"
+      ],
+      "milestone": "M9",
+      "files": [
+        "framework/update/*",
+        "framework/gui/update_controller.*",
+        "server/update_feed.hpp",
+        "scripts/build-update-feed.py"
+      ],
+      "testFile": "framework/tests/acceptance/test_M9_01.cpp",
+      "card": "tasks/M9-01.md",
+      "evidence": {
+        "summary": "../docs/updates-20260919.md",
+        "regression": "../artifacts/update-verification-20260919/regression.log: 33/33",
+        "slowRoute": "../artifacts/update-verification-20260919/slow-route-tests.log: 2/2",
+        "package": "../artifacts/update-verification-20260919/package-v2-smoke.json",
+        "publicUpgrade": "../artifacts/update-verification-20260919/public-upgrade-v2/result.json",
+        "release": "../artifacts/CipherChat-Remote-Windows-x64-updates-20260919.zip",
+        "server": "2026.9.19.2 published on center 55220"
+      }
+    },
+    {
+      "id": "M9-02",
+      "title": "好友申请与陌生人临时会话",
+      "status": "done",
+      "deps": [
+        "M9-01"
+      ],
+      "milestone": "M9",
+      "files": [
+        "common/protocol/messages.*",
+        "server/storage/*",
+        "server/router/*",
+        "framework/include/ccfw/application.hpp",
+        "framework/src/application.cpp",
+        "framework/gui/*",
+        "framework/tests/acceptance/test_M9_02.cpp",
+        "framework/tests/ui/test_contacts.cpp"
+      ],
+      "testFile": "framework/tests/acceptance/test_M9_02.cpp",
+      "card": "tasks/M9-02.md",
+      "evidence": {
+        "summary": "../docs/contacts-20260920.md",
+        "regression": "../artifacts/contacts-final-regression.log: 35/35",
+        "finalUi": "../artifacts/contacts-final-ui-regression.log: 9 unaffected UI tests passed; contacts async test barrier fixed, ../artifacts/contacts-ui-barriers-tests.log: 3 consecutive passes",
+        "linux": "../artifacts/contacts-linux-tests.log: isolated TLS consent and restart persistence passed",
+        "deployment": "../artifacts/contacts-center-deploy.log: online database backup and health probes passed",
+        "package": "../artifacts/contacts-package-check.json",
+        "publicUpgrade": "../artifacts/contacts-public-upgrade-20260920/result.json",
+        "release": "../artifacts/CipherChat-Remote-Windows-x64-contacts-20260920.zip",
+        "server": "2026.9.20.1 published on center 55220"
+      }
+    },
+    {
+      "id": "M9-03",
+      "title": "Windows 当前用户安装器",
+      "status": "done",
+      "deps": [
+        "M9-02"
+      ],
+      "milestone": "M9",
+      "files": [
+        "scripts/installer/*",
+        "scripts/build-installer.ps1",
+        "scripts/test-installer.ps1"
+      ],
+      "testFile": "scripts/test-installer.ps1",
+      "card": "tasks/M9-03.md",
+      "evidence": {
+        "summary": "../docs/installer-20260920.md",
+        "ctest": "../artifacts/installer-final-ctest.log: M9-03 1/1 passed",
+        "installRepairUninstall": "../artifacts/installer-verification-20260920/result.json",
+        "nativeUi": "../artifacts/installer-verification-20260920/ui/result.json",
+        "release": "../artifacts/CipherChat-2026.9.20.1-Windows-x64.msi"
+      }
+    },
+    {
+      "id": "M8-09",
+      "title": "RhineLabUI 原生三维界面移植",
+      "status": "in_progress",
+      "deps": [
+        "M8-08",
+        "M9-02"
+      ],
+      "milestone": "M8",
+      "files": [
+        "framework/gui/*",
+        "framework/gui/rhine/*",
+        "third_party/rhinelab/*",
+        "framework/tests/ui/test_rhine.cpp",
+        "scripts/package-remote-windows.ps1"
+      ],
+      "testFile": "framework/tests/ui/test_rhine.cpp",
+      "card": "tasks/M8-09.md",
+      "evidence": {}
+    },
+    {
+      "id": "M8-10",
+      "title": "Qt Rhine 与 Codex 保留登录热切换",
+      "status": "done",
+      "deps": [
+        "M8-08",
+        "M9-01"
+      ],
+      "milestone": "M8",
+      "files": [
+        "framework/gui/*",
+        "framework/gui/rhine_native/*",
+        "framework/CMakeLists.txt",
+        "framework/update/update.cpp",
+        "framework/tests/ui/test_hot_switch.cpp",
+        "framework/tests/ui/test_updates.cpp",
+        "framework/tests/acceptance/test_M9_01.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "testFile": "framework/tests/ui/test_hot_switch.cpp",
+      "card": "tasks/M8-10.md",
+      "evidence": {
+        "summary": "../docs/hot-switch-20261005.md",
+        "hotSwitch": "../artifacts/hot-switch-verification-20261005/hot-switch.log",
+        "updates": "../artifacts/hot-switch-verification-20261005/updates-final.log",
+        "package": "../artifacts/hot-switch-verification-20261005/installed-package.json",
+        "activation": "../artifacts/hot-switch-verification-20261005/activation.json",
+        "fullAnimation": "../artifacts/animation-verification-20261005/animation-hot-switch.log: passed, 46.67 seconds",
+        "animationPackage": "../artifacts/animation-verification-20261005/installed-package.json",
+        "animationActivation": "../artifacts/animation-verification-20261005/activation.json",
+        "publication": "../docs/animation-publication-20261005.md",
+        "serverPublication": "../artifacts/animation-publication-20261005/publish-result.log",
+        "publicProbe": "../artifacts/animation-publication-20261005/public-probe.json",
+        "oldClientUpgrade": "../artifacts/animation-publication-20261005/old-client-upgrade/result.json"
+      }
+    },
+    {
+      "id": "M8-11",
+      "title": "Qt 左侧磨砂玻璃工作面板与消息布局",
+      "status": "done",
+      "deps": [
+        "M8-10"
+      ],
+      "milestone": "M8",
+      "files": [
+        "framework/gui/rhine_native/Main.qml",
+        "framework/gui/rhine_native/ChatPanel.qml",
+        "framework/gui/rhine_native/DetailContent.qml",
+        "framework/tests/ui/test_hot_switch.cpp",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "testFile": "framework/tests/ui/test_hot_switch.cpp",
+      "card": "tasks/M8-11.md",
+      "evidence": {
+        "summary": "../docs/glass-workspace-20261005.md",
+        "test": "../artifacts/glass-verification-20261005/layout-hot-switch.log",
+        "package": "../artifacts/glass-verification-20261005/installed-package.json",
+        "activation": "../artifacts/glass-verification-20261005/activation.json",
+        "publication": "../docs/glass-publication-20261005.md",
+        "publicUpgrade": "../artifacts/glass-publication-20261005/old-client-upgrade/result.json",
+        "serverProbe": "../artifacts/glass-publication-20261005/server-probe.json"
+      }
+    },
+    {
+      "id": "M10-00",
+      "title": "基线与公共接口设计",
+      "status": "done",
+      "deps": [],
+      "milestone": "M10",
+      "files": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "allowedFiles": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "card": "tasks/M10-00.md",
+      "steps": [
+        "独立核心与桌面构建；冻结原源码、旧端和界面基线。"
+      ],
+      "accept": [
+        "原基线核心25/25、桌面35/35；原DOCX和原包保留；接口变更先登记。"
+      ],
+      "evidence": {
+        "date": "2026-10-08",
+        "configuration": "core Debug without Qt / desktop Release x64",
+        "core": "test-tmp/features-20261007/core-tests-final-01.log",
+        "runtime": "test-tmp/features-20261007/runtime-tests-final-16.log",
+        "gui": "test-tmp/features-20261007/gui-tests-final-15.log; opening-tests-16.log",
+        "package": "test-tmp/features-package-20261008-r4/result.json",
+        "metadata": "test-tmp/features-20261007/core-metadata-tests-19.log",
+        "document": "test-tmp/features-document-20261008/final-qa.json",
+        "publicServer": "unchanged; local delivery only",
+        "scenarios": "baseline-core-tests.log、baseline-desktop-tests.log、source-baseline.zip"
+      }
+    },
+    {
+      "id": "M10-01",
+      "title": "安全过程可视化",
+      "status": "done",
+      "deps": [
+        "M10-00"
+      ],
+      "milestone": "M10",
+      "files": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "allowedFiles": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "card": "tasks/M10-01.md",
+      "steps": [
+        "真实提交、队列、服务器接受与对端签收位置发布有界阶段事件。"
+      ],
+      "accept": [
+        "提交失败不播放成功；重试/重复ACK；切换后安全状态一致；不表示已读。"
+      ],
+      "evidence": {
+        "date": "2026-10-08",
+        "configuration": "core Debug without Qt / desktop Release x64",
+        "core": "test-tmp/features-20261007/core-tests-final-01.log",
+        "runtime": "test-tmp/features-20261007/runtime-tests-final-16.log",
+        "gui": "test-tmp/features-20261007/gui-tests-final-15.log; opening-tests-16.log",
+        "package": "test-tmp/features-package-20261008-r4/result.json",
+        "metadata": "test-tmp/features-20261007/core-metadata-tests-19.log",
+        "document": "test-tmp/features-document-20261008/final-qa.json",
+        "publicServer": "unchanged; local delivery only",
+        "scenarios": "M10-features、UI-hot-switch"
+      }
+    },
+    {
+      "id": "M10-02",
+      "title": "本地独立演示环境",
+      "status": "done",
+      "deps": [
+        "M10-01"
+      ],
+      "milestone": "M10",
+      "files": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "allowedFiles": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "card": "tasks/M10-02.md",
+      "steps": [
+        "本机回环TLS服务、独立随机身份、两个客户端和拥有句柄的启动器。"
+      ],
+      "accept": [
+        "无公网真实收发；新运行目录；不按程序名终止进程；失败和退出处理。"
+      ],
+      "evidence": {
+        "date": "2026-10-08",
+        "configuration": "core Debug without Qt / desktop Release x64",
+        "core": "test-tmp/features-20261007/core-tests-final-01.log",
+        "runtime": "test-tmp/features-20261007/runtime-tests-final-16.log",
+        "gui": "test-tmp/features-20261007/gui-tests-final-15.log; opening-tests-16.log",
+        "package": "test-tmp/features-package-20261008-r4/result.json",
+        "metadata": "test-tmp/features-20261007/core-metadata-tests-19.log",
+        "document": "test-tmp/features-document-20261008/final-qa.json",
+        "publicServer": "unchanged; local delivery only",
+        "scenarios": "M10-demo-process、M10-demo-controls、独立ZIP offline-run/report.json"
+      },
+      "retiredAt": "2026-10-11",
+      "retirementReason": "用户要求移除答辩演示；done和原证据仅记录历史完成状态，当前实现已删除。"
+    },
+    {
+      "id": "M10-03",
+      "title": "故障演练台",
+      "status": "done",
+      "deps": [
+        "M10-02"
+      ],
+      "milestone": "M10",
+      "files": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "allowedFiles": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "card": "tasks/M10-03.md",
+      "steps": [
+        "演示专属适配器注入断线、首次签收丢失、重复、合法结构密文篡改；检查点后结束受控接收进程并恢复文件。"
+      ],
+      "accept": [
+        "消息ID/重试密文相同；接收只一次；认证失败不推进历史/棘轮；恢复文件逐字节与SHA核对；超时不假通过。"
+      ],
+      "evidence": {
+        "date": "2026-10-08",
+        "configuration": "core Debug without Qt / desktop Release x64",
+        "core": "test-tmp/features-20261007/core-tests-final-01.log",
+        "runtime": "test-tmp/features-20261007/runtime-tests-final-16.log",
+        "gui": "test-tmp/features-20261007/gui-tests-final-15.log; opening-tests-16.log",
+        "package": "test-tmp/features-package-20261008-r4/result.json",
+        "metadata": "test-tmp/features-20261007/core-metadata-tests-19.log",
+        "document": "test-tmp/features-document-20261008/final-qa.json",
+        "publicServer": "unchanged; local delivery only",
+        "scenarios": "演示六个场景及JSON/可读报告；M10-demo-ui"
+      },
+      "retiredAt": "2026-10-11",
+      "retirementReason": "用户要求移除答辩演示；done和原证据仅记录历史完成状态，当前实现已删除。"
+    },
+    {
+      "id": "M10-04",
+      "title": "答辩演示模式",
+      "status": "done",
+      "deps": [
+        "M10-03"
+      ],
+      "milestone": "M10",
+      "files": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "allowedFiles": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "card": "tasks/M10-04.md",
+      "steps": [
+        "三步导航、隐私显示、原正式窗口保留、测试GUI客户端、首次完整Qt开场。"
+      ],
+      "accept": [
+        "正式会话和传输继续；退出恢复界面与草稿；真实新消息签收；拥有的子进程退出。"
+      ],
+      "evidence": {
+        "date": "2026-10-08",
+        "configuration": "core Debug without Qt / desktop Release x64",
+        "core": "test-tmp/features-20261007/core-tests-final-01.log",
+        "runtime": "test-tmp/features-20261007/runtime-tests-final-16.log",
+        "gui": "test-tmp/features-20261007/gui-tests-final-15.log; opening-tests-16.log",
+        "package": "test-tmp/features-package-20261008-r4/result.json",
+        "metadata": "test-tmp/features-20261007/core-metadata-tests-19.log",
+        "document": "test-tmp/features-document-20261008/final-qa.json",
+        "publicServer": "unchanged; local delivery only",
+        "scenarios": "M10-demo-ui、UI-hot-switch、独立演示ZIP宿主启动"
+      },
+      "retiredAt": "2026-10-11",
+      "retirementReason": "用户要求移除答辩演示；done和原证据仅记录历史完成状态，当前实现已删除。"
+    },
+    {
+      "id": "M10-05",
+      "title": "可调整工作台",
+      "status": "done",
+      "deps": [
+        "M10-04"
+      ],
+      "milestone": "M10",
+      "files": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "allowedFiles": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "card": "tasks/M10-05.md",
+      "steps": [
+        "实际逻辑尺寸、宽屏分隔、窄屏标签、联系人抽屉、专注、四个固定会话、草稿和滚动位置。"
+      ],
+      "accept": [
+        "960×640/1366×768/1920×1080，深浅与1/1.25/1.5缩放；底部输入可达；过期保存回执不覆盖新编辑。"
+      ],
+      "evidence": {
+        "date": "2026-10-08",
+        "configuration": "core Debug without Qt / desktop Release x64",
+        "core": "test-tmp/features-20261007/core-tests-final-01.log",
+        "runtime": "test-tmp/features-20261007/runtime-tests-final-16.log",
+        "gui": "test-tmp/features-20261007/gui-tests-final-15.log; opening-tests-16.log",
+        "package": "test-tmp/features-package-20261008-r4/result.json",
+        "metadata": "test-tmp/features-20261007/core-metadata-tests-19.log",
+        "document": "test-tmp/features-document-20261008/final-qa.json",
+        "publicServer": "unchanged; local delivery only",
+        "scenarios": "M10-workspace三项、M4-04-layout、UI-appearance；最终PNG"
+      }
+    },
+    {
+      "id": "M10-06",
+      "title": "视觉身份卡",
+      "status": "done",
+      "deps": [
+        "M10-05"
+      ],
+      "milestone": "M10",
+      "files": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "allowedFiles": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "card": "tasks/M10-06.md",
+      "steps": [
+        "完整SHA-256、辅助图案、粘贴、带作用域文本导入导出与二维码；固定MIT来源。"
+      ],
+      "accept": [
+        "错误/损坏/作用域/旧公钥拒绝；PNG独立解码匹配真实公钥及指纹；同指纹不重开闪烁，密钥变化禁用旧确认。"
+      ],
+      "evidence": {
+        "date": "2026-10-08",
+        "configuration": "core Debug without Qt / desktop Release x64",
+        "core": "test-tmp/features-20261007/core-tests-final-01.log",
+        "runtime": "test-tmp/features-20261007/runtime-tests-final-16.log",
+        "gui": "test-tmp/features-20261007/gui-tests-final-15.log; opening-tests-16.log",
+        "package": "test-tmp/features-package-20261008-r4/result.json",
+        "metadata": "test-tmp/features-20261007/core-metadata-tests-19.log",
+        "document": "test-tmp/features-document-20261008/final-qa.json",
+        "publicServer": "unchanged; local delivery only",
+        "scenarios": "M10-features、M10-workspace内身份事件回归、test-identity-qr.py、GUI身份确认次数"
+      }
+    },
+    {
+      "id": "M10-07",
+      "title": "多文件交付卡与版本关联",
+      "status": "done",
+      "deps": [
+        "M10-06"
+      ],
+      "milestone": "M10",
+      "files": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "allowedFiles": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "card": "tasks/M10-07.md",
+      "steps": [
+        "私聊1～16文件，清单不可变、确定任务ID、单项恢复、取消、加权进度、人工确认与版本关联。"
+      ],
+      "accept": [
+        "零字节/同名/多文件/失败/离线/重启；提前和错误摘要确认拒绝；重复幂等；真实旧端收说明与文件，旧端写库保留扩展。"
+      ],
+      "evidence": {
+        "date": "2026-10-08",
+        "configuration": "core Debug without Qt / desktop Release x64",
+        "core": "test-tmp/features-20261007/core-tests-final-01.log",
+        "runtime": "test-tmp/features-20261007/runtime-tests-final-16.log",
+        "gui": "test-tmp/features-20261007/gui-tests-final-15.log; opening-tests-16.log",
+        "package": "test-tmp/features-package-20261008-r4/result.json",
+        "metadata": "test-tmp/features-20261007/core-metadata-tests-19.log",
+        "document": "test-tmp/features-document-20261008/final-qa.json",
+        "publicServer": "unchanged; local delivery only",
+        "scenarios": "M10-features六组场景；冻结旧进程真实TLS兼容及DPAPI/CAS测试"
+      }
+    },
+    {
+      "id": "M10-08",
+      "title": "综合验收与交付",
+      "status": "done",
+      "deps": [
+        "M10-07",
+        "M10-09"
+      ],
+      "milestone": "M10",
+      "files": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "allowedFiles": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "card": "tasks/M10-08.md",
+      "steps": [
+        "正式ZIP、独立演示ZIP、本地feed、独立解压验收、任务/契约和另存答辩稿。"
+      ],
+      "accept": [
+        "包内依赖启动；本机真实TLS下载与旧版→新版→旧版回退、资料标记保留；Word PDF所有页检查；不上传公共服务器。"
+      ],
+      "evidence": {
+        "date": "2026-10-08",
+        "configuration": "core Debug without Qt / desktop Release x64",
+        "core": "test-tmp/features-20261007/core-tests-final-01.log",
+        "runtime": "test-tmp/features-20261007/runtime-tests-final-16.log",
+        "gui": "test-tmp/features-20261007/gui-tests-final-15.log; opening-tests-16.log",
+        "package": "test-tmp/features-package-20261008-r4/result.json",
+        "metadata": "test-tmp/features-20261007/core-metadata-tests-19.log",
+        "document": "test-tmp/features-document-20261008/final-qa.json",
+        "publicServer": "unchanged; local delivery only",
+        "scenarios": "独立包result.json、manifest.json、包SHA256、文档final-qa.json"
+      }
+    },
+    {
+      "id": "M10-09",
+      "title": "更新下载恢复修复",
+      "deps": [
+        "M10-00"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-09.md",
+      "status": "done",
+      "files": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "allowedFiles": [
+        "framework/include/ccfw",
+        "framework/src",
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/update",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "docs",
+        "scripts",
+        "third_party/qrcodegen"
+      ],
+      "steps": [
+        "固定最多四路块下载、独立TLS连接、有限重连、缓存、暂停/继续及无响应看门狗。"
+      ],
+      "accept": [
+        "真实TLS无回复与断线重连；哈希/证书不绕过；缓存继续；未完整校验不能激活；速度不承诺所有网络固定倍数。"
+      ],
+      "evidence": {
+        "date": "2026-10-08",
+        "configuration": "core Debug without Qt / desktop Release x64",
+        "core": "test-tmp/features-20261007/core-tests-final-01.log",
+        "runtime": "test-tmp/features-20261007/runtime-tests-final-16.log",
+        "gui": "test-tmp/features-20261007/gui-tests-final-15.log; opening-tests-16.log",
+        "package": "test-tmp/features-package-20261008-r4/result.json",
+        "metadata": "test-tmp/features-20261007/core-metadata-tests-19.log",
+        "document": "test-tmp/features-document-20261008/final-qa.json",
+        "publicServer": "unchanged; local delivery only",
+        "scenarios": "M10-updates三组、UI-updates、独立包本地stage/activate/rollback日志"
+      }
+    },
+    {
+      "id": "M10-10",
+      "title": "移除答辩演示功能",
+      "status": "done",
+      "deps": [
+        "M10-04",
+        "M10-05",
+        "M10-06",
+        "M10-07",
+        "M10-09"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-10.md",
+      "allowedFiles": [
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/CMakeLists.txt",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "scripts",
+        "docs"
+      ],
+      "files": [
+        "framework/gui",
+        "framework/demo",
+        "framework/tests",
+        "framework/CMakeLists.txt",
+        "framework/tasks.json",
+        "framework/tasks",
+        "framework/docs",
+        "scripts",
+        "docs"
+      ],
+      "steps": [
+        "移除双界面演示入口、启动参数、故障组件和演示构建/包装；兼容工具归测试目录。"
+      ],
+      "accept": [
+        "正常业务、共享会话热切换、三缩放工作台、旧端兼容、独立包升级回退均有本轮真实证据；公共服务器未改。"
+      ],
+      "evidence": {
+        "date": "2026-10-12",
+        "record": "../docs/remove-demo-20261011.md",
+        "core": "../test-tmp/remove-demo-20261011/core-tests-01.log",
+        "gui": "../test-tmp/remove-demo-20261011/gui-tests-01.log; hot-switch-tests-02.log",
+        "package": "../test-tmp/remove-demo-20261011/package-acceptance/result.json"
+      }
+    },
+    {
+      "id": "M10-11",
+      "title": "安全流程与文件交付改为会话入口",
+      "status": "done",
+      "deps": [
+        "M10-10"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-11.md",
+      "allowedFiles": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/rhine_native/Main.qml",
+        "framework/gui/rhine_native/ChatPanel.qml",
+        "framework/tasks",
+        "framework/tasks.json",
+        "framework/docs",
+        "scripts/package-features.py",
+        "docs"
+      ],
+      "files": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/rhine_native/Main.qml",
+        "framework/gui/rhine_native/ChatPanel.qml",
+        "framework/tasks",
+        "framework/tasks.json",
+        "framework/docs",
+        "scripts/package-features.py",
+        "docs"
+      ],
+      "steps": [
+        "移除主导航和Qt顶部重复入口；保留消息详情与私聊文件操作；记录本地验证。"
+      ],
+      "accept": [
+        "既有导航、真实登录热切换、三缩放工作台通过，截图和独立本地包有本轮证据。"
+      ],
+      "evidence": {
+        "date": "2026-10-12",
+        "record": "../docs/contextual-actions-20261012.md",
+        "tests": "../test-tmp/contextual-actions-20261012/gui-tests-01.log; navigation-tests-02.log",
+        "package": "../test-tmp/contextual-actions-20261012/package-acceptance/result.json"
+      }
+    },
+    {
+      "id": "M10-12",
+      "title": "Qt Rhine 日常操作改造",
+      "status": "done",
+      "deps": [
+        "M10-11"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-12.md",
+      "allowedFiles": [
+        "framework/gui/rhine_native",
+        "framework/tests/ui",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks",
+        "framework/tasks.json",
+        "framework/docs",
+        "docs",
+        "scripts/package-features.py"
+      ],
+      "files": [
+        "framework/gui/rhine_native",
+        "framework/tests/ui",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks",
+        "framework/tasks.json",
+        "framework/docs",
+        "docs",
+        "scripts/package-features.py"
+      ],
+      "steps": [
+        "按已确认方案实现右侧操作区、导航、会话列表、独立历史与输入、附件和浮层，保留全部动效与业务边界。"
+      ],
+      "accept": [
+        "完整操作、动画、多尺寸缩放、TLS业务回归和本地独立包验收均记录本轮证据。"
+      ],
+      "evidence": {
+        "date": "2026-10-12",
+        "record": "../docs/qt-usability-verification-20261012.md",
+        "gui": "../test-tmp/usability-20261012/usability-final-02.xml; copy-motion-final.log",
+        "layout": "../test-tmp/usability-20261012/scales-final-03.xml",
+        "regression": "../test-tmp/usability-20261012/regression-01.xml (seven original successful checks; failed usability replaced by final evidence)",
+        "package": "../test-tmp/usability-20261012/package-acceptance/result.json; entry-result.json",
+        "animations": "../test-tmp/usability-20261012/preserved-animation-assets.json"
+      }
+    },
+    {
+      "id": "M10-13",
+      "title": "模型完整构图与登录前界面",
+      "status": "done",
+      "deps": [
+        "M10-12"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-13.md",
+      "allowedFiles": [
+        "framework/gui/rhine_native",
+        "framework/tests/ui",
+        "framework/tasks",
+        "framework/tasks.json",
+        "framework/docs",
+        "docs",
+        "scripts/package-features.py",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "files": [
+        "framework/gui/rhine_native",
+        "framework/tests/ui",
+        "framework/tasks",
+        "framework/tasks.json",
+        "framework/docs",
+        "docs",
+        "scripts/package-features.py",
+        "framework/tests/acceptance/CMakeLists.txt"
+      ],
+      "steps": [
+        "让完整模型随右侧面板宽度适配；未登录仅显示紧凑登录区，登录后展开业务入口。"
+      ],
+      "accept": [
+        "登录前后交互、模型投影、多尺寸缩放、原业务与完整开场回归，以及新本地包启动均以本轮证据登记。"
+      ],
+      "evidence": {
+        "date": "2026-10-13",
+        "record": "../docs/qt-layout-login-verification-20261013.md",
+        "tests": "../test-tmp/layout-login-20261012/regression-02.xml; features-01.xml; login-final-03.xml; usability-final-05.xml",
+        "package": "../test-tmp/layout-login-20261012/package-result.json",
+        "animations": "../test-tmp/layout-login-20261012/preserved-animation-assets.json"
+      }
+    },
+    {
+      "id": "M10-14",
+      "title": "移除会话固定与专注模式",
+      "status": "done",
+      "deps": [
+        "M10-13"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-14.md",
+      "allowedFiles": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/rhine_native/Main.qml",
+        "framework/gui/rhine_native/Workspace.qml",
+        "framework/gui/rhine_native/ConversationView.qml",
+        "framework/gui/rhine_native/ChatStore.qml",
+        "framework/gui/rhine_native/SessionList.qml",
+        "framework/gui/rhine_native/TerminalModal.qml",
+        "framework/gui/rhine_native/DetailContent.qml",
+        "framework/tests/ui/test_M10_workspace.cpp",
+        "framework/tests/ui/test_rhine_usability.cpp",
+        "framework/tasks",
+        "framework/tasks.json",
+        "docs",
+        "test-tmp/simple-workspace-20261013",
+        "artifacts"
+      ],
+      "files": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/rhine_native/Main.qml",
+        "framework/gui/rhine_native/Workspace.qml",
+        "framework/gui/rhine_native/ConversationView.qml",
+        "framework/gui/rhine_native/ChatStore.qml",
+        "framework/gui/rhine_native/SessionList.qml",
+        "framework/gui/rhine_native/TerminalModal.qml",
+        "framework/gui/rhine_native/DetailContent.qml",
+        "framework/tests/ui/test_M10_workspace.cpp",
+        "framework/tests/ui/test_rhine_usability.cpp",
+        "framework/tasks",
+        "framework/tasks.json",
+        "docs",
+        "test-tmp/simple-workspace-20261013",
+        "artifacts"
+      ],
+      "steps": [
+        "删除两种桌面界面中的固定、置顶和专注交互，保留正常布局与旧存储兼容。"
+      ],
+      "accept": [
+        "两种界面入口移除、草稿和热切换、相关业务、多尺寸主题缩放截图、原动画资源与新包独立启动，以本轮证据登记。"
+      ],
+      "evidence": {
+        "date": "2026-10-13",
+        "record": "../docs/qt-simple-workspace-verification-20261013.md",
+        "tests": "../test-tmp/simple-workspace-20261013/regression-desktop-02.xml; contacts-desktop-02.xml; features-runtime-04.xml; interaction-desktop-01.xml",
+        "package": "../test-tmp/simple-workspace-20261013/package-result.json",
+        "animations": "../test-tmp/simple-workspace-20261013/preserved-animation-assets.json",
+        "shortcut": "../test-tmp/simple-workspace-20261013/shortcut-updated.json"
+      }
+    },
+    {
+      "id": "M10-15",
+      "title": "Codex登录界面记住账号与密码",
+      "status": "done",
+      "deps": [
+        "M10-14"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-15.md",
+      "files": [
+        "framework/gui/login_preferences.hpp",
+        "framework/gui/login_preferences.cpp",
+        "framework/gui/main_window.cpp",
+        "framework/CMakeLists.txt",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tests/ui/test_login_preferences.cpp",
+        "framework/tasks",
+        "framework/tasks.json",
+        "docs",
+        "test-tmp/remember-login-20261014",
+        "artifacts",
+        "scripts/package-features.py"
+      ],
+      "allowedFiles": [
+        "framework/gui/login_preferences.hpp",
+        "framework/gui/login_preferences.cpp",
+        "framework/gui/main_window.cpp",
+        "framework/CMakeLists.txt",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tests/ui/test_login_preferences.cpp",
+        "framework/tasks",
+        "framework/tasks.json",
+        "docs",
+        "test-tmp/remember-login-20261014",
+        "artifacts",
+        "scripts/package-features.py"
+      ],
+      "steps": [
+        "仅完成Codex版的两个登录复选框，使用原DPAPI保护器保存成功登录的账号密码。"
+      ],
+      "accept": [
+        "选项联动、记住与清除、失败不覆盖、密码保护和界面回归，经本轮实际操作、截图及独立包验证后登记。"
+      ],
+      "evidence": {
+        "date": "2026-10-14",
+        "record": "../docs/codex-remember-login-verification-20261014.md",
+        "tests": "../test-tmp/remember-login-20261014/login-01.xml;regression-01.xml;features-01.xml",
+        "package": "../test-tmp/remember-login-20261014/package-result.json",
+        "shortcut": "../test-tmp/remember-login-20261014/shortcut-updated.json"
+      }
+    },
+    {
+      "id": "M10-16",
+      "title": "IPv6中转慢上传修复与客户端更新发布",
+      "status": "done",
+      "deps": [
+        "M10-15"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-16.md",
+      "files": [
+        "common/net/socket.hpp",
+        "client/core/net_client.cpp",
+        "framework/tests/acceptance/test_ipv6_mtu.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks/M10-16.md",
+        "framework/tasks.json",
+        "docs",
+        "scripts",
+        "test-tmp/relay-fix-20261014",
+        "artifacts"
+      ],
+      "allowedFiles": [
+        "common/net/socket.hpp",
+        "client/core/net_client.cpp",
+        "framework/tests/acceptance/test_ipv6_mtu.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks/M10-16.md",
+        "framework/tasks.json",
+        "docs",
+        "scripts",
+        "test-tmp/relay-fix-20261014",
+        "artifacts"
+      ],
+      "steps": [
+        "针对已复现的IPv6上传重传设置客户端socket MTU上限，完成对照、文件和更新器验证后发布客户端更新。"
+      ],
+      "accept": [
+        "实际测试、独立包与公网清单/块校验完成后登记；不改Qt界面或服务器业务。"
+      ],
+      "evidence": {
+        "date": "2026-10-14",
+        "record": "../docs/relay-fix-verification-20261014.md",
+        "tests": "../test-tmp/relay-fix-20261014/core-regression-01.xml;tls-01.xml;login-01.xml",
+        "public_file": "../test-tmp/relay-fix-20261014/public-headless-fresh-02.log",
+        "package": "../test-tmp/relay-fix-20261014/package-result.json",
+        "old_updater": "../test-tmp/relay-fix-20261014/update-compatibility-result.json",
+        "publication": "../test-tmp/relay-fix-20261014/publication-result.json",
+        "public_tls": "../test-tmp/relay-fix-20261014/public-tls-result.json",
+        "shortcut": "../test-tmp/relay-fix-20261014/shortcut-updated.json"
+      }
+    },
+    {
+      "id": "M10-17",
+      "title": "Codex QQ式菜单、登录门控与会话体验",
+      "status": "done",
+      "deps": [
+        "M10-16"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-17.md",
+      "files": [
+        "framework/gui/main_window.*",
+        "framework/gui/business_worker.*",
+        "framework/gui/messenger.hpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/gui/feature_ui.cpp",
+        "framework/gui/update_controller.cpp",
+        "framework/tests/ui",
+        "framework/tests/acceptance/gui_driver.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks/M10-17.md",
+        "framework/tasks.json",
+        "docs",
+        "scripts",
+        "test-tmp/qq-workspace-20261014",
+        "artifacts"
+      ],
+      "allowedFiles": [
+        "framework/gui/main_window.*",
+        "framework/gui/business_worker.*",
+        "framework/gui/messenger.hpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/gui/feature_ui.cpp",
+        "framework/gui/update_controller.cpp",
+        "framework/tests/ui",
+        "framework/tests/acceptance/gui_driver.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks/M10-17.md",
+        "framework/tasks.json",
+        "docs",
+        "scripts",
+        "test-tmp/qq-workspace-20261014",
+        "artifacts"
+      ],
+      "steps": [
+        "按用户确认方案实施普通桌面工作区、发送结果、状态和托盘；仅本地交付。"
+      ],
+      "accept": [
+        "真实TLS及UI验收、最新截图、独立包启动通过后登记；不发布服务器。"
+      ],
+      "evidence": {
+        "date": "2026-10-14",
+        "record": "../docs/codex-qq-workspace-verification-20261014.md",
+        "tests": "../test-tmp/qq-workspace-20261014/regression-final.xml;regression-final-corners.xml;regression-final-style.xml;regression-final-width.xml;core-regression.xml;regression-final-adapter.xml",
+        "screenshots": "../artifacts/CipherChat-Codex-QQ-20261014-QA-Verified/index.json",
+        "package": "../test-tmp/qq-workspace-20261014/package-result.json",
+        "shortcut": "../test-tmp/qq-workspace-20261014/shortcut-result.json",
+        "native": "../test-tmp/qq-workspace-20261014/native-source-audit.json",
+        "core": "../test-tmp/qq-workspace-20261014/core-source-audit.json",
+        "completion": "../test-tmp/qq-workspace-20261014/completion-audit.json"
+      }
+    },
+    {
+      "id": "M10-18",
+      "title": "Codex独立注册页面",
+      "status": "done",
+      "deps": [
+        "M10-17"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-18.md",
+      "files": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/tests/ui/qt_client_page.cpp",
+        "framework/tests/ui/test_login_preferences.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks/M10-18.md",
+        "framework/tasks.json",
+        "docs",
+        "test-tmp/register-page-20261014",
+        "artifacts"
+      ],
+      "allowedFiles": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/tests/ui/qt_client_page.cpp",
+        "framework/tests/ui/test_login_preferences.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks/M10-18.md",
+        "framework/tasks.json",
+        "docs",
+        "test-tmp/register-page-20261014",
+        "artifacts"
+      ],
+      "steps": [
+        "独立注册页复用原注册业务，本地验收和交付。"
+      ],
+      "accept": [
+        "独立注册和确认校验、失败返回及登录记忆回归，最新截图、独立包启动及桌面入口。"
+      ],
+      "evidence": {
+        "date": "2026-10-14",
+        "record": "../docs/codex-registration-verification-20261014.md",
+        "tests": "../test-tmp/register-page-20261014/regression-final.xml",
+        "screenshots": "../artifacts/CipherChat-Codex-Registration-20261014-QA/index.json",
+        "package": "../test-tmp/register-page-20261014/package-result.json",
+        "shortcut": "../test-tmp/register-page-20261014/shortcut-result.json",
+        "scope": "../test-tmp/register-page-20261014/source-boundary-audit.json",
+        "completion": "../test-tmp/register-page-20261014/completion-audit.json"
+      }
+    },
+    {
+      "id": "M10-19",
+      "title": "数字UID卡、移除二维码及本机联系人备注",
+      "status": "done",
+      "deps": [
+        "M10-18"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-19.md",
+      "files": [
+        "common/protocol/messages.*",
+        "server/router/router.*",
+        "framework/include/ccfw/application.hpp",
+        "framework/include/ccfw/account_service.hpp",
+        "framework/src/application.cpp",
+        "framework/src/account_service.cpp",
+        "framework/gui/business_worker.*",
+        "framework/gui/feature_ui.*",
+        "framework/gui/main_window.cpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/tests/ui",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks/M10-19.md",
+        "framework/tasks.json",
+        "docs",
+        "test-tmp/uid-notes-20261014",
+        "artifacts",
+        "framework/gui/rhine_json.cpp",
+        "framework/tests/acceptance/test_uid.cpp"
+      ],
+      "allowedFiles": [
+        "common/protocol/messages.*",
+        "server/router/router.*",
+        "framework/include/ccfw/application.hpp",
+        "framework/include/ccfw/account_service.hpp",
+        "framework/src/application.cpp",
+        "framework/src/account_service.cpp",
+        "framework/gui/business_worker.*",
+        "framework/gui/feature_ui.*",
+        "framework/gui/main_window.cpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/tests/ui",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks/M10-19.md",
+        "framework/tasks.json",
+        "docs",
+        "test-tmp/uid-notes-20261014",
+        "artifacts",
+        "framework/gui/rhine_json.cpp",
+        "framework/tests/acceptance/test_uid.cpp"
+      ],
+      "steps": [
+        "复用服务器永久id作为数字UID，追加兼容查询；本机备注在标题下方显示。"
+      ],
+      "accept": [
+        "真实UID、安全核对、备注隔离持久、UI/业务回归、截图、本地交付及可审阅服务端材料；公网发布完成准备后确认。"
+      ],
+      "evidence": {
+        "date": "2026-10-14",
+        "record": "../docs/codex-uid-notes-verification-20261014.md",
+        "core": "../test-tmp/uid-notes-20261014/core-final.xml",
+        "gui": "../test-tmp/uid-notes-20261014/gui-final.xml",
+        "latest": "../test-tmp/uid-notes-20261014/layout-final.xml",
+        "screenshots": "../artifacts/CipherChat-Codex-UID-Notes-20261014-QA/index.json",
+        "package": "../test-tmp/uid-notes-20261014/package-result.json",
+        "shortcut": "../test-tmp/uid-notes-20261014/shortcut-result.json",
+        "server_review": "../test-tmp/uid-notes-20261014/server-review-result.json",
+        "public_uid_enabled": false
+      }
+    },
+    {
+      "id": "M10-20",
+      "title": "Linux 构建依赖与公网 UID 接口部署",
+      "status": "done",
+      "deps": [
+        "M10-19"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-20.md",
+      "files": [
+        "framework/tasks/M10-20.md",
+        "framework/tasks.json",
+        "docs/uid-server-deployment-20261014.md",
+        "test-tmp/uid-server-20261014",
+        "artifacts",
+        "framework/tests/acceptance/test_M2_01.cpp"
+      ],
+      "allowedFiles": [
+        "framework/tasks/M10-20.md",
+        "framework/tasks.json",
+        "docs/uid-server-deployment-20261014.md",
+        "test-tmp/uid-server-20261014",
+        "artifacts",
+        "framework/tests/acceptance/test_M2_01.cpp"
+      ],
+      "steps": [
+        "本机 Linux 构建和隔离验证后，在线备份并部署 UID 接口。"
+      ],
+      "accept": [
+        "Linux 编译、真实 UID/兼容回归、公网 TLS、账户/证书/更新不变、可回退发布证据。"
+      ],
+      "evidence": {
+        "date": "2026-10-15",
+        "record": "../docs/uid-server-deployment-20261014.md",
+        "public_uid_enabled": true,
+        "deployment": "../test-tmp/uid-server-20261014/deployment-final.json",
+        "backup": "../test-tmp/uid-server-20261014/backup-verification.json",
+        "linux_core_boundary": "../test-tmp/uid-server-20261014/linux-framework.xml",
+        "windows_core": "../test-tmp/uid-server-20261014/windows-core.xml",
+        "windows_linux_e2e": "../test-tmp/uid-server-20261014/windows-linux-e2e.json",
+        "package": "../test-tmp/uid-server-20261014/package.json",
+        "independent_start": "../test-tmp/uid-server-20261014/package-independent-uid.json"
+      }
+    },
+    {
+      "id": "M10-21",
+      "title": "Codex 文件列表与本地操作",
+      "status": "in_progress",
+      "deps": [
+        "M10-19",
+        "M10-20"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-21.md",
+      "files": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/main_window.hpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/gui/local_file_actions.cpp",
+        "framework/gui/local_file_actions.hpp",
+        "framework/CMakeLists.txt",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tests/ui/test_file_queue.cpp",
+        "framework/tasks/M10-21.md",
+        "framework/tasks.json",
+        "docs/codex-files-20261015.md",
+        "test-tmp/file-page-20261015",
+        "artifacts",
+        "framework/tests/acceptance/test_M8_preferences.cpp",
+        "docs/codex-files-verification-20261015.md"
+      ],
+      "allowedFiles": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/main_window.hpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/gui/local_file_actions.cpp",
+        "framework/gui/local_file_actions.hpp",
+        "framework/CMakeLists.txt",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tests/ui/test_file_queue.cpp",
+        "framework/tasks/M10-21.md",
+        "framework/tasks.json",
+        "docs/codex-files-20261015.md",
+        "test-tmp/file-page-20261015",
+        "artifacts",
+        "framework/tests/acceptance/test_M8_preferences.cpp",
+        "docs/codex-files-verification-20261015.md"
+      ],
+      "steps": [
+        "紧凑列表、原位刷新、具体对话位置、系统打开与文件管理器选中文件。"
+      ],
+      "accept": [
+        "当前源码编译、实际界面与相关业务回归、最新截图、本地包与快捷方式。"
+      ],
+      "evidence": {
+        "date": "2026-10-15",
+        "record": "../docs/codex-files-verification-20261015.md",
+        "repaired": "../test-tmp/file-page-20261015/repaired.xml",
+        "initial": "../test-tmp/file-page-20261015/regression-before-fixture-fix.log",
+        "screenshots": "../artifacts/CipherChat-Codex-Files-20261015-QA/index.json",
+        "native_file_actions": "../test-tmp/file-page-20261015/native-verification.json",
+        "package": "../test-tmp/file-page-20261015/package-result.json",
+        "shortcut": "../test-tmp/file-page-20261015/shortcut-result.json",
+        "implementation_delivered": true,
+        "independent_window_final_check_completed": false
+      }
+    },
+    {
+      "id": "M10-22",
+      "title": "Codex 联系人恢复陌生人与临时会话",
+      "status": "done",
+      "deps": [
+        "M10-19",
+        "M10-20"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-22.md",
+      "files": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks.json",
+        "framework/tests/ui/test_contact_sections.cpp",
+        "framework/tasks/M10-22.md",
+        "docs/codex-contacts-20261015.md",
+        "docs/codex-contacts-verification-20261015.md",
+        "test-tmp/contact-pages-20261015",
+        "artifacts"
+      ],
+      "allowedFiles": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks.json",
+        "framework/tests/ui/test_contact_sections.cpp",
+        "framework/tasks/M10-22.md",
+        "docs/codex-contacts-20261015.md",
+        "docs/codex-contacts-verification-20261015.md",
+        "test-tmp/contact-pages-20261015",
+        "artifacts"
+      ],
+      "steps": [
+        "恢复分类入口、复用检索与临时记录、资料和发消息、搜索与选中状态。"
+      ],
+      "accept": [
+        "隔离 TLS 和实际鼠标键盘回归、三档缩放与深浅截图、另存本地包及保留数据的快捷方式。"
+      ],
+      "evidence": {
+        "date": "2026-10-15",
+        "version": "2026.10.15.2",
+        "tests": "../test-tmp/contact-pages-20261015/sections.xml; regression.xml",
+        "passed_unique_tests": 9,
+        "screenshots": "../artifacts/CipherChat-Codex-Contacts-20261015-QA/index.json",
+        "screenshots_reviewed": 54,
+        "record": "../docs/codex-contacts-verification-20261015.md",
+        "package": "../test-tmp/contact-pages-20261015/package-result.json",
+        "shortcut": "../test-tmp/contact-pages-20261015/shortcut-result.json",
+        "protected_files_unchanged": 4493,
+        "independent_window_and_normal_exit_verified": true
+      }
+    },
+    {
+      "id": "M10-23",
+      "title": "Codex 彩铅手绘主题与云朵聊天气泡",
+      "status": "done",
+      "deps": [
+        "M10-22"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-23.md",
+      "files": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/CMakeLists.txt",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "scripts/package-features.py",
+        "framework/tasks.json",
+        "framework/gui/pencil_skin.cpp",
+        "framework/gui/pencil_skin.hpp",
+        "framework/tests/ui/test_pencil_skin.cpp",
+        "framework/tasks/M10-23.md",
+        "docs/codex-pencil-20261015.md",
+        "docs/codex-pencil-verification-20261015.md",
+        "test-tmp/pencil-skin-20261015",
+        "artifacts"
+      ],
+      "allowedFiles": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/CMakeLists.txt",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "scripts/package-features.py",
+        "framework/tasks.json",
+        "framework/gui/pencil_skin.cpp",
+        "framework/gui/pencil_skin.hpp",
+        "framework/tests/ui/test_pencil_skin.cpp",
+        "framework/tasks/M10-23.md",
+        "docs/codex-pencil-20261015.md",
+        "docs/codex-pencil-verification-20261015.md",
+        "test-tmp/pencil-skin-20261015",
+        "artifacts"
+      ],
+      "steps": [
+        "参考本机 VX 彩铅皮肤，补齐纸纹、粉彩描边、楷体、涂鸦及私聊群聊文件气泡，设置切换与持久化。"
+      ],
+      "accept": [
+        "隔离 TLS 实际业务、三档缩放深浅截图、皮肤往返和重启、相关回归、另存包及桌面快捷方式。"
+      ],
+      "evidence": {
+        "date": "2026-10-15",
+        "version": "2026.10.15.3",
+        "unique_tests_passed": 9,
+        "tests": "../test-tmp/pencil-skin-20261015/accepted.xml; delivery-tests.xml",
+        "screenshots": "../artifacts/CipherChat-Codex-Pencil-20261015-QA/index.json",
+        "screenshots_reviewed": 69,
+        "record": "../docs/codex-pencil-verification-20261015.md",
+        "package": "../test-tmp/pencil-skin-20261015/package-result.json",
+        "shortcut": "../test-tmp/pencil-skin-20261015/shortcut-result.json",
+        "protected_files_unchanged": 4493,
+        "normal_exit_method": "verified owned PID CloseMainWindow, code 0",
+        "foreground_close_verification_completed": false
+      }
+    },
+    {
+      "id": "M10-24",
+      "title": "清理不可达样式分支并合并重复测试配置",
+      "status": "done",
+      "deps": [
+        "M10-23"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-24.md",
+      "files": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/tests/ui/test_pencil_skin.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/CMakeLists.txt",
+        "framework/tasks.json",
+        "framework/tasks/M10-24.md",
+        "docs/code-simplification-20261015.md",
+        "test-tmp/code-simplify-20261015"
+      ],
+      "allowedFiles": [
+        "framework/gui/main_window.cpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/tests/ui/test_pencil_skin.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/CMakeLists.txt",
+        "framework/tasks.json",
+        "framework/tasks/M10-24.md",
+        "docs/code-simplification-20261015.md",
+        "test-tmp/code-simplify-20261015"
+      ],
+      "steps": [
+        "保留现有功能，移除普通桌面窗口不可达的旧设计分支及冗余样式副本，复用文件状态展示和GUI测试配置。"
+      ],
+      "accept": [
+        "CTest完整注册清单一致；相关构建、业务及GUI回归；当前截图检查与原文件备份。"
+      ],
+      "evidence": {
+        "baseline": "../test-tmp/code-simplify-20261015/baseline",
+        "baseline_tests": "../test-tmp/code-simplify-20261015/baseline.xml",
+        "baseline_failure": "UI-appearance exit 5 before changes",
+        "date": "2026-10-15",
+        "source_lines_removed_net": 120,
+        "ctest_inventory_identical": 65,
+        "unique_tests_passed": 44,
+        "core_tests": "../test-tmp/code-simplify-20261015/core.xml",
+        "ui_tests": "../test-tmp/code-simplify-20261015/ui.xml; ui-qq-final.xml",
+        "reviewed_images": "../test-tmp/code-simplify-20261015/reviewed-images.json",
+        "record": "../docs/code-simplification-20261015.md",
+        "build": "../test-tmp/code-simplify-20261015/build-final.log",
+        "qq_fixture_repair": "Kept profiles in build/qq: receiver .part path 277 -> 255 characters, including received_ prefix; original assertions retained."
+      }
+    },
+    {
+      "id": "M10-25",
+      "title": "合并 Windows 测试入口并归档遗留网页端",
+      "status": "done",
+      "deps": [
+        "M10-24"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-25.md",
+      "files": [
+        "framework/cmake/TestModules.cmake",
+        "framework/tests/support",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tests/acceptance/process_fixture.hpp",
+        "framework/tests/compatibility/CMakeLists.txt",
+        "framework/tests/compatibility/process_io.hpp",
+        "framework/tests/ui/test_appearance.cpp",
+        "framework/tests/ui/test_colors.cpp",
+        "framework/tests/ui/test_designs.cpp",
+        "framework/tests/ui/test_updates.cpp",
+        "framework/tests/ui/test_M10_workspace.cpp",
+        "framework/gui/main.cpp",
+        "framework/gui/rhine_native",
+        "framework/scripts/test.ps1",
+        "framework/tasks.json",
+        "framework/README.md",
+        "README.md",
+        "scripts/package-features.py",
+        "scripts/start-native.cmd",
+        "启动CipherChat.bat",
+        "启动CipherChat-Rhine.bat",
+        "frontends/rhine",
+        "framework/gui/rhine_web_bridge.cpp",
+        "framework/tasks/M10-25.md",
+        "docs/test-host-and-native-rhine-20261015.md",
+        "test-tmp/test-host-20261015",
+        "framework/build/verification",
+        "framework/build/test-host",
+        "framework/gui/update_controller.cpp",
+        "framework/gui/update_controller.hpp"
+      ],
+      "allowedFiles": [
+        "framework/cmake/TestModules.cmake",
+        "framework/tests/support",
+        "framework/CMakeLists.txt",
+        "framework/CMakePresets.json",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tests/acceptance/process_fixture.hpp",
+        "framework/tests/compatibility/CMakeLists.txt",
+        "framework/tests/compatibility/process_io.hpp",
+        "framework/tests/ui/test_appearance.cpp",
+        "framework/tests/ui/test_colors.cpp",
+        "framework/tests/ui/test_designs.cpp",
+        "framework/tests/ui/test_updates.cpp",
+        "framework/tests/ui/test_M10_workspace.cpp",
+        "framework/gui/main.cpp",
+        "framework/gui/rhine_native",
+        "framework/scripts/test.ps1",
+        "framework/tasks.json",
+        "framework/README.md",
+        "README.md",
+        "scripts/package-features.py",
+        "scripts/start-native.cmd",
+        "启动CipherChat.bat",
+        "启动CipherChat-Rhine.bat",
+        "frontends/rhine",
+        "framework/gui/rhine_web_bridge.cpp",
+        "framework/tasks/M10-25.md",
+        "docs/test-host-and-native-rhine-20261015.md",
+        "test-tmp/test-host-20261015",
+        "framework/build/verification",
+        "framework/build/test-host",
+        "framework/gui/update_controller.cpp",
+        "framework/gui/update_controller.hpp"
+      ],
+      "steps": [
+        "固定测试宿主与构建入口，保留独立进程和原测试契约；归档网页端，Qt 资源与启动器独立。"
+      ],
+      "accept": [
+        "65 项测试注册契约一致；核心 29 项和 GUI 20 项通过，覆盖全部 47 个测试模块；旧外观失败保留。",
+        "Qt 启动与原生截图验证通过；50 个测试/辅助 DLL 导出入口有效，核心 29 个模块不导入 Qt。"
+      ],
+      "evidence": {
+        "baseline": "../test-tmp/test-host-20261015/baseline",
+        "legacyWeb": "../test-tmp/test-host-20261015/legacy-web",
+        "firewallSnapshot": "../test-tmp/test-host-20261015/firewall-before.json",
+        "verification": "../docs/test-host-and-native-rhine-20261015.md",
+        "result": "../test-tmp/test-host-20261015/verification-result.json",
+        "inventory": "../test-tmp/test-host-20261015/test-inventory-result.json",
+        "junit": [
+          "../test-tmp/test-host-20261015/core-final.xml",
+          "../test-tmp/test-host-20261015/ui-first.xml",
+          "../test-tmp/test-host-20261015/ui-middle.xml",
+          "../test-tmp/test-host-20261015/ui.xml",
+          "../test-tmp/test-host-20261015/ui-rhine-final.xml",
+          "../test-tmp/test-host-20261015/workspace-final.xml",
+          "../test-tmp/test-host-20261015/known-baseline.xml"
+        ],
+        "nativeStartup": "../test-tmp/test-host-20261015/launcher-result.json",
+        "nativeFrames": "../test-tmp/test-host-20261015/native-frames-verified",
+        "binaryInspection": "../test-tmp/test-host-20261015/binary-inspection.json",
+        "baselineFailure": "UI-appearance retains pre-existing failure; assertions and timeouts unchanged"
+      }
+    },
+    {
+      "id": "M10-26",
+      "title": "修复设置页系统深浅色混用导致的低对比度",
+      "status": "done",
+      "deps": [
+        "M10-25"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-26.md",
+      "files": [
+        "framework/gui/codex_theme.hpp",
+        "framework/gui/appearance_theme.hpp",
+        "framework/tests/ui/test_settings_palette.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks/M10-26.md",
+        "framework/tasks.json",
+        "docs/settings-palette-20261015.md",
+        "test-tmp/settings-palette-20261015",
+        "framework/build/verification",
+        "framework/build/test-host",
+        "artifacts/CipherChat-Codex-Pencil-20261015-SettingsFix",
+        "artifacts/CipherChat-Codex-Pencil-20261015-SettingsFix.zip",
+        "artifacts/features-package-result-CipherChat-Codex-Pencil-20261015-SettingsFix.json"
+      ],
+      "allowedFiles": [
+        "framework/gui/codex_theme.hpp",
+        "framework/gui/appearance_theme.hpp",
+        "framework/tests/ui/test_settings_palette.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks/M10-26.md",
+        "framework/tasks.json",
+        "docs/settings-palette-20261015.md",
+        "test-tmp/settings-palette-20261015",
+        "framework/build/verification",
+        "framework/build/test-host",
+        "artifacts/CipherChat-Codex-Pencil-20261015-SettingsFix",
+        "artifacts/CipherChat-Codex-Pencil-20261015-SettingsFix.zip",
+        "artifacts/features-package-result-CipherChat-Codex-Pencil-20261015-SettingsFix.json"
+      ],
+      "steps": [
+        "统一标签容器背景与应用主题，保存原失败及原生窗口对比证据。"
+      ],
+      "accept": [
+        "系统深浅配色、两套皮肤、五个设置页及主题往返切换的绘制背景与文字均可读。"
+      ],
+      "evidence": {
+        "baseline": "../test-tmp/settings-palette-20261015/baseline",
+        "verification": "../docs/settings-palette-20261015.md",
+        "result": "../test-tmp/settings-palette-20261015/verification-result.json",
+        "junit": [
+          "../test-tmp/settings-palette-20261015/before.xml",
+          "../test-tmp/settings-palette-20261015/after.xml",
+          "../test-tmp/settings-palette-20261015/design-standard.xml"
+        ],
+        "screenshots": "../test-tmp/settings-palette-20261015/after",
+        "registration": "../test-tmp/settings-palette-20261015/registration-check.json",
+        "legacyComparison": "../test-tmp/settings-palette-20261015/design-capture-comparison.json",
+        "package": "../test-tmp/settings-palette-20261015/package-verification.json",
+        "startup": "../test-tmp/settings-palette-20261015/package-launch.json",
+        "baselineFailures": "UI-appearance=5; optional design screenshot mode old/new=8, standard mode passes"
+      }
+    },
+    {
+      "id": "M10-27",
+      "title": "修复菜单与下拉列表系统配色混用",
+      "status": "done",
+      "deps": [
+        "M10-26"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-27.md",
+      "files": [
+        "framework/gui/codex_theme.hpp",
+        "framework/gui/appearance_theme.hpp",
+        "framework/gui/pencil_skin.cpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/tests/ui/test_settings_palette.cpp",
+        "framework/tasks/M10-27.md",
+        "framework/tasks.json",
+        "docs/popup-palette-20261015.md",
+        "test-tmp/popup-palette-20261015",
+        "framework/build/verification",
+        "framework/build/test-host",
+        "artifacts/CipherChat-Codex-Pencil-20261015-PopupFix",
+        "artifacts/CipherChat-Codex-Pencil-20261015-PopupFix.zip",
+        "artifacts/features-package-result-CipherChat-Codex-Pencil-20261015-PopupFix.json"
+      ],
+      "allowedFiles": [
+        "framework/gui/codex_theme.hpp",
+        "framework/gui/appearance_theme.hpp",
+        "framework/gui/pencil_skin.cpp",
+        "framework/gui/messenger_shell.inc",
+        "framework/tests/ui/test_settings_palette.cpp",
+        "framework/tasks/M10-27.md",
+        "framework/tasks.json",
+        "docs/popup-palette-20261015.md",
+        "test-tmp/popup-palette-20261015",
+        "framework/build/verification",
+        "framework/build/test-host",
+        "artifacts/CipherChat-Codex-Pencil-20261015-PopupFix",
+        "artifacts/CipherChat-Codex-Pencil-20261015-PopupFix.zip",
+        "artifacts/features-package-result-CipherChat-Codex-Pencil-20261015-PopupFix.json"
+      ],
+      "steps": [
+        "补齐菜单主题和动态菜单归属，在原配色回归模块中增加实际弹出控件检查。"
+      ],
+      "accept": [
+        "两套皮肤和深浅往返切换下菜单、编辑菜单及下拉列表均可读，原设置页回归不退化。"
+      ],
+      "evidence": {
+        "baseline": "../test-tmp/popup-palette-20261015/baseline",
+        "verification": "../docs/popup-palette-20261015.md",
+        "result": "../test-tmp/popup-palette-20261015/verification-result.json",
+        "junit": [
+          "../test-tmp/popup-palette-20261015/before.xml",
+          "../test-tmp/popup-palette-20261015/final.xml"
+        ],
+        "screenshots": "../test-tmp/popup-palette-20261015/after-final",
+        "registration": "../test-tmp/popup-palette-20261015/registration-check.json",
+        "package": "../test-tmp/popup-palette-20261015/package-verification.json",
+        "startup": "../test-tmp/popup-palette-20261015/package-launch.json",
+        "hostCompatibility": "../test-tmp/popup-palette-20261015/host-compat-standard.xml"
+      }
+    },
+    {
+      "id": "M10-28",
+      "title": "删除联系人列表底部重复的添加好友按钮",
+      "status": "done",
+      "deps": [
+        "M10-27"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-28.md",
+      "files": [
+        "framework/gui/messenger_shell.inc",
+        "framework/tests/ui/test_contact_sections.cpp",
+        "framework/tasks/M10-28.md",
+        "framework/tasks.json",
+        "docs/contacts-cleanup-20261016.md",
+        "test-tmp/contacts-cleanup-20261016",
+        "framework/build/test-host",
+        "artifacts/CipherChat-Codex-Pencil-20261016-ContactsCleanup",
+        "artifacts/CipherChat-Codex-Pencil-20261016-ContactsCleanup.zip",
+        "artifacts/features-package-result-CipherChat-Codex-Pencil-20261016-ContactsCleanup.json"
+      ],
+      "allowedFiles": [
+        "framework/gui/messenger_shell.inc",
+        "framework/tests/ui/test_contact_sections.cpp",
+        "framework/tasks/M10-28.md",
+        "framework/tasks.json",
+        "docs/contacts-cleanup-20261016.md",
+        "test-tmp/contacts-cleanup-20261016",
+        "framework/build/test-host",
+        "artifacts/CipherChat-Codex-Pencil-20261016-ContactsCleanup",
+        "artifacts/CipherChat-Codex-Pencil-20261016-ContactsCleanup.zip",
+        "artifacts/features-package-result-CipherChat-Codex-Pencil-20261016-ContactsCleanup.json"
+      ],
+      "steps": [
+        "删除独立按钮，调整现有 UI 回归的导航入口，构建及验证另存包。"
+      ],
+      "accept": [
+        "底部独立按钮消失，列表内加好友和既有联系人分类、搜索及好友申请流程仍可用。"
+      ],
+      "evidence": {
+        "baseline": "../test-tmp/contacts-cleanup-20261016/baseline",
+        "verification": "../docs/contacts-cleanup-20261016.md",
+        "result": "../test-tmp/contacts-cleanup-20261016/verification-result.json",
+        "junit": "../test-tmp/contacts-cleanup-20261016/contacts.xml",
+        "screenshots": "../test-tmp/contacts-cleanup-20261016/release/ui-evidence/contact-sections/scale-1.5",
+        "package": "../test-tmp/contacts-cleanup-20261016/package-verification.json",
+        "startup": "../test-tmp/contacts-cleanup-20261016/package-launch.json"
+      }
+    },
+    {
+      "id": "M10-29",
+      "title": "发布已验收客户端至服务器更新频道",
+      "status": "done",
+      "deps": [
+        "M10-28"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-29.md",
+      "files": [
+        "framework/tasks/M10-29.md",
+        "framework/tasks.json",
+        "docs/client-publication-20261016.md",
+        "test-tmp/client-publication-20261016"
+      ],
+      "allowedFiles": [
+        "framework/tasks/M10-29.md",
+        "framework/tasks.json",
+        "docs/client-publication-20261016.md",
+        "test-tmp/client-publication-20261016"
+      ],
+      "steps": [
+        "严格校验原包与当前频道，增量暂存上传并原子发布，验证公网和隔离更新下载。"
+      ],
+      "accept": [
+        "线上 2026.10.16.1 原清单与块一致，旧更新器可识别和下载；聊天服务及资料不受部署操作修改。"
+      ],
+      "evidence": {
+        "previousManifest": "../test-tmp/client-publication-20261016/latest-before-publication.json",
+        "verification": "../docs/client-publication-20261016.md",
+        "result": "../test-tmp/client-publication-20261016/publication-result.json",
+        "public": "../test-tmp/client-publication-20261016/public-after.json",
+        "download": "../test-tmp/client-publication-20261016/download-verification.json",
+        "server": "../test-tmp/client-publication-20261016/remote-final.json"
+      }
+    },
+    {
+      "id": "M10-30",
+      "title": "更新下载跨文件并发与直接提速引导",
+      "status": "done",
+      "deps": [
+        "M10-29"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-30.md",
+      "files": [
+        "framework/update/update.cpp",
+        "framework/update/update.hpp",
+        "framework/update/main.cpp",
+        "framework/gui/update_controller.cpp",
+        "framework/tests/acceptance/test_M10_updates.cpp",
+        "framework/tasks.json",
+        "framework/tasks/M10-30.md",
+        "docs/update-speed-20261016.md",
+        "test-tmp/update-speed-20261016",
+        "artifacts/CipherChat-FastUpdate-20261016",
+        "scripts/build-update-feed.py",
+        "scripts/pack-update-feed.py",
+        "scripts/install-update-feed.py",
+        "scripts/package-features.py",
+        "framework/CMakeLists.txt",
+        "artifacts/CipherChat-FastUpdater-20261016",
+        "framework/tests/ui/test_updates.cpp"
+      ],
+      "allowedFiles": [
+        "framework/update/update.cpp",
+        "framework/update/update.hpp",
+        "framework/update/main.cpp",
+        "framework/gui/update_controller.cpp",
+        "framework/tests/acceptance/test_M10_updates.cpp",
+        "framework/tasks.json",
+        "framework/tasks/M10-30.md",
+        "docs/update-speed-20261016.md",
+        "test-tmp/update-speed-20261016",
+        "artifacts/CipherChat-FastUpdate-20261016",
+        "scripts/build-update-feed.py",
+        "scripts/pack-update-feed.py",
+        "scripts/install-update-feed.py",
+        "scripts/package-features.py",
+        "framework/CMakeLists.txt",
+        "artifacts/CipherChat-FastUpdater-20261016",
+        "framework/tests/ui/test_updates.cpp"
+      ],
+      "steps": [
+        "实测四路与多路公网吞吐，合并跨文件调度、减少重复磁盘扫描，验证冷下载、增量、续传和旧包升级入口。"
+      ],
+      "accept": [
+        "不设置下载限速，扩大并发且跨文件预取；已有账号资料保留，实际公网结果与边界有记录。"
+      ],
+      "evidence": {
+        "verification": "../docs/update-speed-20261016.md",
+        "result": "../test-tmp/update-speed-20261016/result.json",
+        "package": "../test-tmp/update-speed-20261016/package-verification.json",
+        "tests": "../test-tmp/update-speed-20261016/ctest-cache-policy.log",
+        "formalZip": "../test-tmp/update-speed-20261016/ctest-real-package.log",
+        "gui": "../test-tmp/update-speed-20261016/ctest-ui-real-package.log",
+        "publication": "../test-tmp/update-speed-20261016/activation.json"
+      }
+    },
+    {
+      "id": "M10-31",
+      "title": "聊天文件服务器缓存及离线重复下载",
+      "status": "done",
+      "deps": [
+        "M10-30"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-31.md",
+      "files": [
+        "common/protocol/messages.hpp",
+        "common/protocol/messages.cpp",
+        "server/router/router.hpp",
+        "server/router/router.cpp",
+        "server/storage/storage.hpp",
+        "server/storage/storage.cpp",
+        "framework/include/ccfw/file_transfer.hpp",
+        "framework/include/ccfw/types.hpp",
+        "framework/src/file_transfer.cpp",
+        "framework/src/snapshot_codec.hpp",
+        "framework/src/application.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks.json",
+        "server/file_cache.hpp",
+        "framework/tests/acceptance/test_file_cache.cpp",
+        "framework/tasks/M10-31.md",
+        "docs/file-cache-20261017.md",
+        "test-tmp/file-cache-20261017",
+        "framework/gui",
+        "artifacts/CipherChat-FileCache-20261017",
+        "framework/tests/acceptance/client_fixture.hpp",
+        "framework/tests/ui/test_file_queue.cpp",
+        "framework/tests/acceptance/test_M4_03.cpp",
+        "server/net/tls_server.cpp",
+        "artifacts/CipherChat-FileCache-20261017.zip"
+      ],
+      "allowedFiles": [
+        "common/protocol/messages.hpp",
+        "common/protocol/messages.cpp",
+        "server/router/router.hpp",
+        "server/router/router.cpp",
+        "server/storage/storage.hpp",
+        "server/storage/storage.cpp",
+        "framework/include/ccfw/file_transfer.hpp",
+        "framework/include/ccfw/types.hpp",
+        "framework/src/file_transfer.cpp",
+        "framework/src/snapshot_codec.hpp",
+        "framework/src/application.cpp",
+        "framework/tests/acceptance/CMakeLists.txt",
+        "framework/tasks.json",
+        "server/file_cache.hpp",
+        "framework/tests/acceptance/test_file_cache.cpp",
+        "framework/tasks/M10-31.md",
+        "docs/file-cache-20261017.md",
+        "test-tmp/file-cache-20261017",
+        "framework/gui",
+        "artifacts/CipherChat-FileCache-20261017",
+        "framework/tests/acceptance/client_fixture.hpp",
+        "framework/tests/ui/test_file_queue.cpp",
+        "framework/tests/acceptance/test_M4_03.cpp",
+        "server/net/tls_server.cpp",
+        "artifacts/CipherChat-FileCache-20261017.zip"
+      ],
+      "steps": [
+        "增加独立加密缓存和能力协商、离线先上传、服务器下载和重复下载入口，双端真实TLS及持久化验证后交付。"
+      ],
+      "accept": [
+        "发送方离线不影响接收下载；同一缓存无需重复上传可再次下载；账号隔离、续传、原文件及原聊天功能保持。"
+      ],
+      "evidence": [
+        "../test-tmp/file-cache-20261017/tests-window4-final.log",
+        "../test-tmp/file-cache-20261017/linux-tests-bulk.log",
+        "../test-tmp/file-cache-20261017/linux-isolated-bulk.json",
+        "../test-tmp/file-cache-20261017/public-cache-result.json",
+        "../test-tmp/file-cache-20261017/server-deployment-bulk.json",
+        "../docs/file-cache-20261017.md",
+        "../test-tmp/file-cache-20261017/public-old-updater-stage.json",
+        "../test-tmp/file-cache-20261017/final-server-audit.json",
+        "../test-tmp/file-cache-20261017/activation.json"
+      ]
+    },
+    {
+      "id": "M10-32",
+      "title": "注册邮箱与邮箱验证码（本地候选，待真实SMTP及部署）",
+      "status": "done",
+      "deps": [
+        "M10-31"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-32.md",
+      "files": [
+        "common/auth/email.hpp",
+        "common/protocol/messages.hpp",
+        "common/protocol/messages.cpp",
+        "server/registration_email.hpp",
+        "server/registration_email.cpp",
+        "server/smtp_mailer.hpp",
+        "server/smtp_mailer.cpp",
+        "server/router/router.hpp",
+        "server/router/router.cpp",
+        "server/storage/storage.hpp",
+        "server/storage/storage.cpp",
+        "server/main.cpp",
+        "server/CMakeLists.txt",
+        "CMakeLists.txt",
+        "tests/test_registration_email.cpp",
+        "tests/CMakeLists.txt",
+        "framework/include/ccfw/account_service.hpp",
+        "framework/src/account_service.cpp",
+        "framework/src/application.cpp",
+        "framework/gui/business_worker.hpp",
+        "framework/gui/business_worker.cpp",
+        "framework/gui/rhine_json.cpp",
+        "framework/CMakeLists.txt",
+        "framework/tasks.json",
+        "framework/tasks/M10-32.md",
+        "docs/registration-email-20261018.md",
+        "test-tmp/registration-email-20261018",
+        "README.md",
+        "../Messager/src/services",
+        "../Messager/src/ui/accountdialog.h",
+        "../Messager/src/ui/accountdialog.cpp",
+        "../Messager/src/main.cpp",
+        "../Messager/tests/tst_live.cpp",
+        "../Messager/CMakeLists.txt",
+        "../Messager/evidence/registration-email-20261018",
+        "../Messager/README.md",
+        "../Messager/runtime-email-preview-20261018",
+        "../Messager/runtime-v0.3.7",
+        "../Messager/run.cmd",
+        "../Messager/runtime-v0.3.1/desktop-frontends.json",
+        "../Messager/tools/desktop-launcher/README.md"
+      ],
+      "allowedFiles": [
+        "common/auth/email.hpp",
+        "common/protocol/messages.hpp",
+        "common/protocol/messages.cpp",
+        "server/registration_email.hpp",
+        "server/registration_email.cpp",
+        "server/smtp_mailer.hpp",
+        "server/smtp_mailer.cpp",
+        "server/router/router.hpp",
+        "server/router/router.cpp",
+        "server/storage/storage.hpp",
+        "server/storage/storage.cpp",
+        "server/main.cpp",
+        "server/CMakeLists.txt",
+        "CMakeLists.txt",
+        "tests/test_registration_email.cpp",
+        "tests/CMakeLists.txt",
+        "framework/include/ccfw/account_service.hpp",
+        "framework/src/account_service.cpp",
+        "framework/src/application.cpp",
+        "framework/gui/business_worker.hpp",
+        "framework/gui/business_worker.cpp",
+        "framework/gui/rhine_json.cpp",
+        "framework/CMakeLists.txt",
+        "framework/tasks.json",
+        "framework/tasks/M10-32.md",
+        "docs/registration-email-20261018.md",
+        "test-tmp/registration-email-20261018",
+        "README.md",
+        "../Messager/src/services",
+        "../Messager/src/ui/accountdialog.h",
+        "../Messager/src/ui/accountdialog.cpp",
+        "../Messager/src/main.cpp",
+        "../Messager/tests/tst_live.cpp",
+        "../Messager/CMakeLists.txt",
+        "../Messager/evidence/registration-email-20261018",
+        "../Messager/README.md",
+        "../Messager/runtime-email-preview-20261018"
+      ],
+      "steps": [
+        "完成注册邮箱与服务器门禁、真实TLS和本机SMTPS联调、QQ真实收件、备份和Linux部署，切换默认Messager V0.3.7入口。"
+      ],
+      "accept": [
+        "邮箱验证成功才创建账号；旧账号登录保持；SMTP失败不得显示成功或产生可用验证码；真实邮箱收件与线上部署单独验收。"
+      ],
+      "evidence": [
+        "../docs/registration-email-20261018.md",
+        "../test-tmp/registration-email-20261018/server-tests.log",
+        "../test-tmp/registration-email-20261018/smtp-integration-result.json",
+        "../../Messager/evidence/registration-email-tests.log",
+        "../test-tmp/registration-email-20261018/linux-tests-recheck.log",
+        "../test-tmp/registration-email-20261018/deployment.json",
+        "../test-tmp/registration-email-20261018/public-probe.json",
+        "../test-tmp/registration-email-20261018/final-verification.json"
+      ]
+    },
+    {
+      "id": "M10-33",
+      "title": "忘记密码与邮箱验证码重置",
+      "status": "done",
+      "deps": [
+        "M10-32"
+      ],
+      "files": [
+        "common/protocol/messages.hpp",
+        "common/protocol/messages.cpp",
+        "server/router/router.hpp",
+        "server/router/router.cpp",
+        "server/main.cpp",
+        "server/smtp_mailer.hpp",
+        "server/smtp_mailer.cpp",
+        "framework/include/ccfw/account_service.hpp",
+        "framework/src/account_service.cpp",
+        "framework/src/application.cpp",
+        "framework/gui/business_worker.hpp",
+        "framework/gui/business_worker.cpp",
+        "framework/gui/rhine_json.cpp",
+        "framework/tasks.json",
+        "../Messager/src/ui/accountdialog.h",
+        "../Messager/src/ui/accountdialog.cpp",
+        "../Messager/src/services/chatservice.h",
+        "../Messager/src/services/cipherchatservice.h",
+        "../Messager/src/services/cipherchatservice.cpp",
+        "../Messager/src/main.cpp",
+        "../Messager/CMakeLists.txt",
+        "../Messager/run.cmd",
+        "../Messager/runtime-v0.3.1/desktop-frontends.json",
+        "README.md",
+        "../Messager/README.md",
+        "tests/CMakeLists.txt",
+        "framework/tasks/M10-33.md",
+        "docs/password-reset-20261018.md",
+        "test-tmp/password-reset-20261018",
+        "../Messager/tests/tst_live.cpp",
+        "../Messager/tests/tst_messager.cpp",
+        "../Messager/evidence/password-reset-20261018",
+        "../Messager/runtime-v0.3.8",
+        "tests/test_registration_email.cpp",
+        "framework/include/ccfw/server_services.hpp",
+        "../Messager/tools/desktop-launcher/README.md"
+      ],
+      "steps": [
+        "本机干净全量构建，受限目标机测试与隔离真实QQ邮件验收通过，备份部署并验证公网能力，默认入口切换V0.3.8。"
+      ],
+      "accept": [
+        "绑定邮箱及有效重置码才修改口令；注册码不可重置；旧密码失效、新密码配合原身份登录；错误/重放无副作用。"
+      ],
+      "evidence": [
+        "../docs/password-reset-20261018.md",
+        "../test-tmp/password-reset-20261018/server-ctest.log",
+        "../test-tmp/password-reset-20261018/server-reset-tests.log",
+        "../test-tmp/password-reset-20261018/smtp-integration-result.json",
+        "../test-tmp/password-reset-20261018/client-ctest.log",
+        "../test-tmp/password-reset-20261018/release-smoke.json",
+        "../test-tmp/password-reset-20261018/native-tests-passed.json",
+        "../test-tmp/password-reset-20261018/linux-reset-smtp-result.json",
+        "../test-tmp/password-reset-20261018/deployment.json",
+        "../test-tmp/password-reset-20261018/public-reset-probe.json",
+        "../test-tmp/password-reset-20261018/final-verification.json"
+      ]
+    },
+    {
+      "id": "M10-34",
+      "title": "Messager 个人资料、可更换头像和好友可见文字朋友圈",
+      "status": "done",
+      "deps": [
+        "M10-33"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-34.md",
+      "files": [
+        "common/protocol/messages.hpp",
+        "common/protocol/messages.cpp",
+        "server/storage/storage.hpp",
+        "server/storage/storage.cpp",
+        "server/router/router.hpp",
+        "server/router/router.cpp",
+        "framework/include/ccfw/application.hpp",
+        "framework/src/application.cpp",
+        "framework/gui/business_worker.hpp",
+        "framework/gui/business_worker.cpp",
+        "framework/gui/rhine_json.cpp",
+        "framework/tasks.json",
+        "README.md",
+        "tests/CMakeLists.txt",
+        "../Messager/CMakeLists.txt",
+        "../Messager/src/main.cpp",
+        "../Messager/src/services/chatservice.h",
+        "../Messager/src/services/cipherchatservice.h",
+        "../Messager/src/services/cipherchatservice.cpp",
+        "../Messager/src/ui/mainwindow.h",
+        "../Messager/src/ui/mainwindow.cpp",
+        "../Messager/src/ui/liveui.cpp",
+        "../Messager/src/ui/components.h",
+        "../Messager/src/ui/components.cpp",
+        "../Messager/tests/tst_live.cpp",
+        "../Messager/tests/tst_messager.cpp",
+        "../Messager/README.md",
+        "../Messager/run.cmd",
+        "../Messager/runtime-v0.3.1/desktop-frontends.json",
+        "../Messager/tools/desktop-launcher/README.md",
+        "server/profile_moments.hpp",
+        "tests/test_profile_moments.cpp",
+        "../Messager/src/ui/profilepage.h",
+        "../Messager/src/ui/profilepage.cpp",
+        "framework/tasks/M10-34.md",
+        "docs/profile-moments-20261018.md",
+        "test-tmp/profile-moments-20261018",
+        "../Messager/evidence/profile-moments-20261018",
+        "../Messager/runtime-v0.3.9",
+        "artifacts/Messager-V0.3.9-Windows-x64.zip",
+        "scripts/start-messager.cmd",
+        "../Messager/runtime-v0.3.9/PROFILE.md"
+      ],
+      "allowedFiles": [
+        "common/protocol/messages.hpp",
+        "common/protocol/messages.cpp",
+        "server/storage/storage.hpp",
+        "server/storage/storage.cpp",
+        "server/router/router.hpp",
+        "server/router/router.cpp",
+        "framework/include/ccfw/application.hpp",
+        "framework/src/application.cpp",
+        "framework/gui/business_worker.hpp",
+        "framework/gui/business_worker.cpp",
+        "framework/gui/rhine_json.cpp",
+        "framework/tasks.json",
+        "README.md",
+        "tests/CMakeLists.txt",
+        "../Messager/CMakeLists.txt",
+        "../Messager/src/main.cpp",
+        "../Messager/src/services/chatservice.h",
+        "../Messager/src/services/cipherchatservice.h",
+        "../Messager/src/services/cipherchatservice.cpp",
+        "../Messager/src/ui/mainwindow.h",
+        "../Messager/src/ui/mainwindow.cpp",
+        "../Messager/src/ui/liveui.cpp",
+        "../Messager/src/ui/components.h",
+        "../Messager/src/ui/components.cpp",
+        "../Messager/tests/tst_live.cpp",
+        "../Messager/tests/tst_messager.cpp",
+        "../Messager/README.md",
+        "../Messager/run.cmd",
+        "../Messager/runtime-v0.3.1/desktop-frontends.json",
+        "../Messager/tools/desktop-launcher/README.md",
+        "server/profile_moments.hpp",
+        "tests/test_profile_moments.cpp",
+        "../Messager/src/ui/profilepage.h",
+        "../Messager/src/ui/profilepage.cpp",
+        "framework/tasks/M10-34.md",
+        "docs/profile-moments-20261018.md",
+        "test-tmp/profile-moments-20261018",
+        "../Messager/evidence/profile-moments-20261018",
+        "../Messager/runtime-v0.3.9",
+        "artifacts/Messager-V0.3.9-Windows-x64.zip",
+        "scripts/start-messager.cmd",
+        "../Messager/runtime-v0.3.9/PROFILE.md"
+      ],
+      "steps": [
+        "新增持久化资料和文字动态协议，经原业务线程接入当前 Messager；验收后发布V0.3.9及服务端。"
+      ],
+      "accept": [
+        "资料顶部头像和昵称，下方动态按时间倒序；仅自己和好友可读动态；跨客户端及重启后保持。"
+      ],
+      "evidence": [
+        "../docs/profile-moments-20261018.md",
+        "../test-tmp/profile-moments-20261018/client-ctest-final.log",
+        "../test-tmp/profile-moments-20261018/server-ctest-final2.log",
+        "../test-tmp/profile-moments-20261018/linux-local-full/native-tests-final.log",
+        "../test-tmp/profile-moments-20261018/remote-native-tests-final.log",
+        "../test-tmp/profile-moments-20261018/deployment.json",
+        "../test-tmp/profile-moments-20261018/public-profile-result.json",
+        "../test-tmp/profile-moments-20261018/final-server-check.json",
+        "../test-tmp/profile-moments-20261018/package-verification.json",
+        "../test-tmp/profile-moments-20261018/launcher-check.json"
+      ]
+    },
+    {
+      "id": "M10-35",
+      "title": "Messager 左侧朋友圈与自己好友聚合动态",
+      "status": "done",
+      "deps": [
+        "M10-34"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-35.md",
+      "files": [
+        "server/storage/storage.cpp",
+        "server/router/router.cpp",
+        "tests/test_profile_moments.cpp",
+        "framework/tasks.json",
+        "README.md",
+        "../Messager/CMakeLists.txt",
+        "../Messager/src/main.cpp",
+        "../Messager/src/services/chatservice.h",
+        "../Messager/src/services/cipherchatservice.h",
+        "../Messager/src/services/cipherchatservice.cpp",
+        "../Messager/src/ui/mainwindow.h",
+        "../Messager/src/ui/mainwindow.cpp",
+        "../Messager/src/ui/liveui.cpp",
+        "../Messager/src/ui/components.cpp",
+        "../Messager/tests/tst_live.cpp",
+        "../Messager/README.md",
+        "../Messager/run.cmd",
+        "../Messager/runtime-v0.3.1/desktop-frontends.json",
+        "../Messager/tools/desktop-launcher/README.md",
+        "../Messager/src/ui/momentspage.h",
+        "../Messager/src/ui/momentspage.cpp",
+        "framework/tasks/M10-35.md",
+        "docs/moments-feed-20261018.md",
+        "test-tmp/moments-feed-20261018",
+        "../Messager/evidence/moments-feed-20261018",
+        "../Messager/runtime-v0.3.10",
+        "artifacts/Messager-V0.3.10-Windows-x64.zip",
+        "../Messager/src/ui/profilepage.h",
+        "../Messager/src/ui/profilepage.cpp",
+        "scripts/start-messager.cmd",
+        "../Messager/runtime-v0.3.10/PROFILE.md"
+      ],
+      "allowedFiles": [
+        "server/storage/storage.cpp",
+        "server/router/router.cpp",
+        "tests/test_profile_moments.cpp",
+        "framework/tasks.json",
+        "README.md",
+        "../Messager/CMakeLists.txt",
+        "../Messager/src/main.cpp",
+        "../Messager/src/services/chatservice.h",
+        "../Messager/src/services/cipherchatservice.h",
+        "../Messager/src/services/cipherchatservice.cpp",
+        "../Messager/src/ui/mainwindow.h",
+        "../Messager/src/ui/mainwindow.cpp",
+        "../Messager/src/ui/liveui.cpp",
+        "../Messager/src/ui/components.cpp",
+        "../Messager/tests/tst_live.cpp",
+        "../Messager/README.md",
+        "../Messager/run.cmd",
+        "../Messager/runtime-v0.3.1/desktop-frontends.json",
+        "../Messager/tools/desktop-launcher/README.md",
+        "../Messager/src/ui/momentspage.h",
+        "../Messager/src/ui/momentspage.cpp",
+        "framework/tasks/M10-35.md",
+        "docs/moments-feed-20261018.md",
+        "test-tmp/moments-feed-20261018",
+        "../Messager/evidence/moments-feed-20261018",
+        "../Messager/runtime-v0.3.10",
+        "artifacts/Messager-V0.3.10-Windows-x64.zip",
+        "../Messager/src/ui/profilepage.h",
+        "../Messager/src/ui/profilepage.cpp",
+        "scripts/start-messager.cmd",
+        "../Messager/runtime-v0.3.10/PROFILE.md"
+      ],
+      "steps": [
+        "复用 social 请求增加 feed 操作，服务端筛选好友并统一排序；原业务线程接入左侧朋友圈，验证后交付。"
+      ],
+      "accept": [
+        "左侧朋友圈图标可进入自己和全部好友的动态列表；时间逆序、同时间稳定分页、非好友不可读、可进入作者资料及返回。",
+        "他人资料页底部发消息按钮直接打开对应聊天；自己的资料页不显示。"
+      ],
+      "evidence": [
+        "../docs/moments-feed-20261018.md",
+        "../test-tmp/moments-feed-20261018/client-ctest-final.log",
+        "../test-tmp/moments-feed-20261018/linux-local-full/native-tests-final.log",
+        "../test-tmp/moments-feed-20261018/remote-native-tests-final.log",
+        "../test-tmp/moments-feed-20261018/deployment.json",
+        "../test-tmp/moments-feed-20261018/final-server-check.json",
+        "../test-tmp/moments-feed-20261018/public-profile-result.json",
+        "../test-tmp/moments-feed-20261018/package-verification.json",
+        "../test-tmp/moments-feed-20261018/launcher-check.json"
+      ]
+    },
+    {
+      "id": "M10-36",
+      "title": "Messager 登录页自动检查并请求更新",
+      "status": "done",
+      "deps": [
+        "M10-35"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-36.md",
+      "files": [
+        "framework/update/update.cpp",
+        "framework/update/main.cpp",
+        "framework/update/launcher.cpp",
+        "framework/gui/update_controller.cpp",
+        "framework/gui/update_controller.hpp",
+        "server/update_feed.hpp",
+        "tests/test_profile_moments.cpp",
+        "framework/tasks.json",
+        "README.md",
+        "../Messager/CMakeLists.txt",
+        "../Messager/src/main.cpp",
+        "../Messager/src/ui/accountdialog.cpp",
+        "../Messager/src/ui/mainwindow.h",
+        "../Messager/src/ui/liveui.cpp",
+        "../Messager/tests/tst_live.cpp",
+        "../Messager/README.md",
+        "../Messager/run.cmd",
+        "../Messager/runtime-v0.3.1/desktop-frontends.json",
+        "../Messager/tools/desktop-launcher/README.md",
+        "framework/tasks/M10-36.md",
+        "docs/login-update-20261018.md",
+        "test-tmp/login-update-20261018",
+        "../Messager/evidence/login-update-20261018",
+        "../Messager/runtime-v0.3.11",
+        "artifacts/Messager-V0.3.11-Windows-x64.zip",
+        "../Messager/tests/tst_updates.cpp",
+        "framework/CMakeLists.txt"
+      ],
+      "allowedFiles": [
+        "framework/update/update.cpp",
+        "framework/update/main.cpp",
+        "framework/update/launcher.cpp",
+        "framework/gui/update_controller.cpp",
+        "framework/gui/update_controller.hpp",
+        "server/update_feed.hpp",
+        "tests/test_profile_moments.cpp",
+        "framework/tasks.json",
+        "README.md",
+        "../Messager/CMakeLists.txt",
+        "../Messager/src/main.cpp",
+        "../Messager/src/ui/accountdialog.cpp",
+        "../Messager/src/ui/mainwindow.h",
+        "../Messager/src/ui/liveui.cpp",
+        "../Messager/tests/tst_live.cpp",
+        "../Messager/README.md",
+        "../Messager/run.cmd",
+        "../Messager/runtime-v0.3.1/desktop-frontends.json",
+        "../Messager/tools/desktop-launcher/README.md",
+        "framework/tasks/M10-36.md",
+        "docs/login-update-20261018.md",
+        "test-tmp/login-update-20261018",
+        "../Messager/evidence/login-update-20261018",
+        "../Messager/runtime-v0.3.11",
+        "artifacts/Messager-V0.3.11-Windows-x64.zip",
+        "../Messager/tests/tst_updates.cpp",
+        "framework/CMakeLists.txt"
+      ],
+      "steps": [
+        "复用更新引擎和独立助手，增加Messager隔离渠道与启动检查提示，验证下载/切换/重开后发布。"
+      ],
+      "accept": [
+        "未登录自动检查；有新版提示下载和退出更新；无更新或断网不妨碍登录；更新保持账号并重新启动当前主界面。"
+      ],
+      "evidence": [
+        "../docs/login-update-20261018.md",
+        "../test-tmp/login-update-20261018/client-ctest-final.log",
+        "../test-tmp/login-update-20261018/linux-local-full/native-tests-final.log",
+        "../test-tmp/login-update-20261018/remote-native-tests-final.log",
+        "../test-tmp/login-update-20261018/deployment.json",
+        "../test-tmp/login-update-20261018/public-check.json",
+        "../test-tmp/login-update-20261018/publication.json",
+        "../test-tmp/login-update-20261018/package-verification.json",
+        "../test-tmp/login-update-20261018/launcher-check.json",
+        "../test-tmp/login-update-20261018/cleanup-result.json"
+      ]
+    },
+    {
+      "id": "M10-37",
+      "title": "统一紫色聊天应用图标",
+      "status": "done",
+      "deps": [
+        "M10-36"
+      ],
+      "milestone": "M10",
+      "card": "tasks/M10-37.md",
+      "files": [
+        "framework/tasks.json",
+        "README.md",
+        "../Messager/CMakeLists.txt",
+        "../Messager/resources.qrc",
+        "../Messager/src/main.cpp",
+        "../Messager/src/ui/accountdialog.cpp",
+        "../Messager/src/ui/components.h",
+        "../Messager/src/ui/components.cpp",
+        "../Messager/src/ui/mainwindow.cpp",
+        "../Messager/tools/desktop-launcher/CMakeLists.txt",
+        "../Messager/tools/desktop-launcher/main.cpp",
+        "../Messager/runtime-v0.3.1/desktop-frontends.json",
+        "../Messager/runtime-v0.3.1/CipherChat-UI-Selector.exe",
+        "../Messager/run.cmd",
+        "../Messager/README.md",
+        "../Messager/tests/tst_updates.cpp",
+        "../Messager/resources/app.svg",
+        "../Messager/resources/app.png",
+        "../Messager/resources/app.ico",
+        "../Messager/resources/app.rc",
+        "framework/tasks/M10-37.md",
+        "docs/brand-icons-20261018.md",
+        "test-tmp/brand-icons-20261018",
+        "../Messager/evidence/brand-icons-20261018",
+        "../Messager/runtime-v0.3.12",
+        "artifacts/Messager-V0.3.12-Windows-x64.zip"
+      ],
+      "allowedFiles": [
+        "framework/tasks.json",
+        "README.md",
+        "../Messager/CMakeLists.txt",
+        "../Messager/resources.qrc",
+        "../Messager/src/main.cpp",
+        "../Messager/src/ui/accountdialog.cpp",
+        "../Messager/src/ui/components.h",
+        "../Messager/src/ui/components.cpp",
+        "../Messager/src/ui/mainwindow.cpp",
+        "../Messager/tools/desktop-launcher/CMakeLists.txt",
+        "../Messager/tools/desktop-launcher/main.cpp",
+        "../Messager/runtime-v0.3.1/desktop-frontends.json",
+        "../Messager/runtime-v0.3.1/CipherChat-UI-Selector.exe",
+        "../Messager/run.cmd",
+        "../Messager/README.md",
+        "../Messager/tests/tst_updates.cpp",
+        "../Messager/resources/app.svg",
+        "../Messager/resources/app.png",
+        "../Messager/resources/app.ico",
+        "../Messager/resources/app.rc",
+        "framework/tasks/M10-37.md",
+        "docs/brand-icons-20261018.md",
+        "test-tmp/brand-icons-20261018",
+        "../Messager/evidence/brand-icons-20261018",
+        "../Messager/runtime-v0.3.12",
+        "artifacts/Messager-V0.3.12-Windows-x64.zip"
+      ],
+      "steps": [
+        "将参考的紫色聊天标志制作为统一资源，替换登录/应用/窗口/启动器/快捷方式图标，构建验证并发布。"
+      ],
+      "accept": [
+        "应用品牌入口图标统一；功能导航和用户头像保持各自用途；原生窗口及新版更新交付通过。"
+      ],
+      "evidence": [
+        "../docs/brand-icons-20261018.md",
+        "../test-tmp/brand-icons-20261018/client-ctest-final.log",
+        "../test-tmp/brand-icons-20261018/pe-icon-verification.json",
+        "../test-tmp/brand-icons-20261018/shortcuts-after.json",
+        "../test-tmp/brand-icons-20261018/publication.json",
+        "../test-tmp/brand-icons-20261018/public-check.json",
+        "../test-tmp/brand-icons-20261018/package-verification.json",
+        "../test-tmp/brand-icons-20261018/launcher-check.json"
+      ]
+    }
+  ],
+  "completion": {
+    "date": "2026-10-18",
+    "done": 74,
+    "total": 76,
+    "verification": "../docs/codex-uid-notes-verification-20261014.md",
+    "delivery": "../artifacts/",
+    "limitations": [
+      "自定义课程设计协议，不与 Signal 互通",
+      "未做独立安全审计或公网长期压力测试",
+      "登录入口已核对UIA；业务流程使用Qt Test原生窗口驱动，中文选词使用组合/提交事件，非所有系统输入法人工验收",
+      "混合文件传输已实现本机直连和 Relay 回退路径；公网跨网络 P2P、NAT 穿透与长期压力测试尚未验证",
+      "公网UID已部署；Linux客户端本地秘密保护器尚未实现，服务端通过Linux实程序及Windows受保护客户端验收。"
+    ],
+    "serverVerification": "../docs/uid-server-deployment-20261014.md",
+    "localFilesVerification": "../docs/codex-files-verification-20261015.md",
+    "localContactsVerification": "../docs/codex-contacts-verification-20261015.md",
+    "localPencilVerification": "../docs/codex-pencil-verification-20261015.md",
+    "codeSimplificationVerification": "../docs/code-simplification-20261015.md",
+    "testHostNativeVerification": "../docs/test-host-and-native-rhine-20261015.md",
+    "settingsPaletteVerification": "../docs/settings-palette-20261015.md",
+    "popupPaletteVerification": "../docs/popup-palette-20261015.md",
+    "contactsCleanupVerification": "../docs/contacts-cleanup-20261016.md",
+    "clientPublicationVerification": "../docs/client-publication-20261016.md",
+    "updateSpeedVerification": "../docs/update-speed-20261016.md",
+    "fileCacheVerification": "../docs/file-cache-20261017.md",
+    "registrationEmailLocalVerification": "../docs/registration-email-20261018.md",
+    "registrationEmailVerification": "../docs/registration-email-20261018.md",
+    "passwordResetVerification": "../docs/password-reset-20261018.md",
+    "profileMomentsVerification": "../docs/profile-moments-20261018.md",
+    "momentsFeedVerification": "../docs/moments-feed-20261018.md",
+    "loginUpdateVerification": "../docs/login-update-20261018.md",
+    "brandIconsVerification": "../docs/brand-icons-20261018.md"
+  }
+}

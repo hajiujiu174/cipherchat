@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/kaahanmotwani/Cinder-Othello",
+  "commit": "f1cc4463c73d744ff1b7f7d14e5f9a237215653e",
+  "files": [
+    "LICENSE",
+    "src/logic.cc",
+    "include/mylibrary/logic.h"
+  ],
+  "license": "MIT"
+}

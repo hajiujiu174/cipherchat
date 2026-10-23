@@ -129,7 +129,7 @@ QWidget* MainWindow::buildNotifications() {
     row->addWidget(mark);
     v->addLayout(row);
     QStringList titles = {"林予在产品设计讨论中提到了你", "桌面端原型.fig 的模拟传输失败",
-                          "欢迎来到 Messager"};
+                          "欢迎来到 NEXTALK"};
     QStringList subtitles = {"「下午一起过一遍界面稿吧。」 · 10:28",
                              "重试可以重新体验进度和完成状态。 · 09:56",
                              "这是一份可以交互的桌面 UI 原型，所有内容仅在本机演示。"};
@@ -177,7 +177,7 @@ QWidget* MainWindow::buildNotifications() {
 }
 QWidget* MainWindow::buildSettings() {
     QVBoxLayout* v;
-    auto* body = pageBase("设置", "让 Messager 更合你的习惯。", &v);
+    auto* body = pageBase("设置", "让 NEXTALK 更合你的习惯。", &v);
     auto* appearance = card();
     auto* a = new QVBoxLayout(appearance);
     a->setContentsMargins(26, 22, 26, 22);
@@ -234,10 +234,10 @@ QWidget* MainWindow::buildSettings() {
     d->setContentsMargins(26, 22, 26, 22);
     d->setSpacing(14);
     const bool isDemo = m_controller->service()->isDemo();
-    d->addWidget(label(isDemo ? "原型体验" : "CipherChat 账号", 17, nullptr, true));
+    d->addWidget(label(isDemo ? "原型体验" : "NEXTALK 账号", 17, nullptr, true));
     auto* hint =
         label(isDemo ? "通过模拟状态检查交互。设置会保存在本机，演示消息与传输进度在重启后重置。"
-                     : "消息、文件和账号历史由 CipherChat 原生业务层处理。连接信息可在账号窗口中设置。",
+                     : "消息、文件和账号历史由 NEXTALK 原生业务层处理。连接信息可在账号窗口中设置。",
               12, "muted");
     hint->setWordWrap(true);
     d->addWidget(hint);
@@ -252,8 +252,8 @@ QWidget* MainWindow::buildSettings() {
     connect(login, &QPushButton::clicked, this, &MainWindow::showLogin);
     v->addWidget(demo);
     v->addWidget(banner(
-        isDemo ? "Messager · 本地演示模式 · 不连接网络"
-               : "CipherChat · Messager 0.2 界面\n支持聊天、文件传输与应用广场。签收不代表已读。"));
+        isDemo ? "NEXTALK · 本地演示模式 · 不连接网络"
+               : "NEXTALK 0.3.25.0\n支持聊天、文件传输与应用广场。签收不代表已读。"));
     v->addStretch();
     return scrollPage(body);
 }

@@ -30,6 +30,9 @@ class ChatService : public QObject {
     virtual bool isDemo() const {
         return true;
     }
+    virtual bool gameRelaySupported() const { return false; }
+    virtual QString gameTransport(const QString&) const { return "TLS"; }
+    virtual bool sendGamePacket(const QString&, const QJsonObject&) { return false; }
     virtual bool online() const {
         return false;
     }
@@ -108,6 +111,8 @@ class ChatService : public QObject {
     void profileChanged(const QString& username);
     void profileSummaryChanged(const QString& username);
     void profileOperationFinished(const QString& op,const QString& username,bool ok,const QString& error);
+    void gamePacket(const QString& peer, const QJsonObject& packet);
+    void gameRelayChanged();
     void conversationsChanged();
     void messagesChanged(const QString& conversation);
     void transfersChanged();

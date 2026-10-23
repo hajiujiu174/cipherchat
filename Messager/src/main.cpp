@@ -4,6 +4,7 @@
 #include "gui/update_controller.hpp"
 #endif
 #include "ui/mainwindow.h"
+#include "core/nextalkbrand.h"
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QDialog>
@@ -26,14 +27,16 @@
 using namespace Messager;
 int main(int argc, char** argv) {
     QApplication app(argc, argv);
+    app.setApplicationDisplayName("NEXTALK");
+    applyNextalkIdentity();
     QCoreApplication::setOrganizationName("MessagerPrototype");
     QCoreApplication::setApplicationName("Messager");
-    QCoreApplication::setApplicationVersion("0.3.15");
+    QCoreApplication::setApplicationVersion("0.3.25.0");
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QCommandLineParser parser;
-    parser.setApplicationDescription("CipherChat · Messager 桌面界面");
+    parser.setApplicationDescription("NEXTALK 即时聊天");
     parser.addHelpOption();
-    parser.addVersionOption();
+    parser.addOption({QStringList{"v","version"},"显示 NEXTALK 版本"});
     parser.addOption({"capture", "保存真实 QWidget 渲染截图与尺寸检查，然后退出", "directory"});
     parser.addOption({"skin", "界面皮肤 default 或 pencil", "skin"});
     parser.addOption({"login", "启动时显示账号窗口"});
@@ -47,6 +50,7 @@ int main(int argc, char** argv) {
                        {"username", "预填用户名", "username"},
                        {"relay-only", "文件仅使用服务器中转"}});
     parser.process(app);
+    if(parser.isSet("version")){qInfo("NEXTALK %s",qPrintable(QCoreApplication::applicationVersion()));return 0;}
     // Directly opening the original executable follows the same installed version pointer.
     if(!parser.isSet("demo")&&!parser.isSet("capture")&&QFile::exists(QCoreApplication::applicationDirPath()+"/current.txt")) {
         if(QProcess::startDetached(QCoreApplication::applicationDirPath()+"/cipherchat-launcher.exe",QCoreApplication::arguments().mid(1)))return 0;
@@ -56,6 +60,7 @@ int main(int argc, char** argv) {
                            QDir::cleanPath(parser.value("capture") + "/../work/capture-settings"));
     }
     app.setWindowIcon(applicationIcon());
+    if(!parser.isSet("capture")&&!parser.isSet("demo"))migrateNextalkShell();
     app.setStyle(QStyleFactory::create("Fusion"));
     if(parser.isSet("skin")) {
         const auto skin=parser.value("skin");

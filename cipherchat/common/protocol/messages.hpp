@@ -74,6 +74,7 @@ enum class MsgType {
     SocialRequest,
     SocialResult,
     EmailLogin,
+    GameRelay,
 };
 
 // 注：不叫 toString——避免与 doctest 的非限定 stringify 经 ADL 串味。

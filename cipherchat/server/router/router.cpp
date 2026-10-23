@@ -54,6 +54,8 @@ void Router::onMessage(Peer& peer, const cc::proto::Message& msg) {
         auto response = cc::proto::makeHelloResult(ok); response.body["uid_lookup"] = ok; response.body["chat_mode"] = "ordinary-v1";
         response.body["file_cache"] = ok && fileCacheEnabled_;
         response.body["profile_moments"] = ok;
+        response.body["game_relay"] = ok && cc::proto::bodyBool(msg.body,"game_relay");
+        if(ok)gamePeers_[&peer]=response.body["game_relay"].get<bool>();
         response.body["moments_feed"] = ok;
         response.body["registration_email"] = ok && bool(registrationEmail_);
         response.body["registration_mail_available"] = ok && registrationEmail_ && registrationEmail_->available();
@@ -112,6 +114,7 @@ void Router::onMessage(Peer& peer, const cc::proto::Message& msg) {
         case MsgType::SocialRequest: handleSocial(peer,msg); break;
         case MsgType::RecipientAck: handleRecipientAck(peer, msg); break;
         case MsgType::Typing: handleTyping(peer, msg); break;
+        case MsgType::GameRelay: handleGameRelay(peer,msg); break;
         case MsgType::ListUsers: handleListUsers(peer); break;
         case MsgType::ListContacts: handleListContacts(peer); break;
         case MsgType::SearchUsers: handleSearchUsers(peer, msg); break;
@@ -175,6 +178,8 @@ void Router::onDisconnect(Peer& peer) {
     directories_.erase(&peer);
     inFlight_.erase(&peer);
     std::erase_if(lastTyping_, [&](const auto& entry) { return entry.first.first == &peer; });
+    lastGameRelay_.erase(&peer);
+    gamePeers_.erase(&peer);
     const std::string user = peer.username();
     const auto online = online_.find(user);
     peer.setUsername("");
@@ -360,6 +365,8 @@ void Router::completeLogin(Peer& peer,const Storage::Account& account) {
             loginChallenges_.disconnect(connectionId(*old));
             inFlight_.erase(old);
             std::erase_if(lastTyping_, [&](const auto& entry) { return entry.first.first == old; });
+            lastGameRelay_.erase(old);
+            gamePeers_.erase(old);
             old->setUsername("");
             deliver(*old, cc::proto::makeError("kicked", "账号在其他设备登录"));
         }
@@ -614,6 +621,21 @@ void Router::handleRecipientAck(Peer& peer, const cc::proto::Message& msg) {
         deliver(*sender, std::move(ack));
     }
     deliverOfflineQueue(peer);
+}
+
+// Online-only game packets never enter Storage, offline queues, or receipt tables.
+void Router::handleGameRelay(Peer& peer, const cc::proto::Message& msg) {
+    if (!usesV2(peer) || peer.username().empty() || findOnline(peer.username())!=&peer || !gamePeers_.count(&peer) || !gamePeers_.at(&peer)) return;
+    const auto to=bodyStr(msg.body,"to");
+    if(to==peer.username() || !isValidUsername(to) || !msg.body.contains("data") ||
+       !msg.body["data"].is_object() || msg.body["data"].dump().size()>8192) return;
+    const auto now=clock_();
+    if(auto i=lastGameRelay_.find(&peer);i!=lastGameRelay_.end() && now-i->second<20) return;
+    lastGameRelay_[&peer]=now;
+    auto friends=db_.friendsForUser(peer.username());
+    if(std::find(friends.begin(),friends.end(),to)==friends.end()) return;
+    if(auto* target=findOnline(to);target&&gamePeers_.count(target)&&gamePeers_.at(target)) deliver(*target,cc::proto::withV2({cc::proto::MsgType::GameRelay,"",
+        {{"from",peer.username()},{"data",msg.body["data"]}}}));
 }
 
 void Router::handleTyping(Peer& peer, const cc::proto::Message& msg) {

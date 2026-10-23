@@ -57,6 +57,62 @@ class MessagerTest : public QObject {
         service.reset();
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     }
+    void conversationOrderingAndPins() {
+        auto* list = window->findChild<QListView*>("conversationList");
+        auto* proxy = qobject_cast<ConversationFilter*>(list->model());
+        auto* model = qobject_cast<ConversationModel*>(proxy->sourceModel());
+        auto firstId = [&] { return proxy->index(0,0).data(ConversationModel::Id).toString(); };
+        const auto selected = controller->selectedId();
+        service->simulateIncoming("xu");
+        QCOMPARE(firstId(), QString("xu"));
+        QCOMPARE(controller->selectedId(), selected);
+        model->setPinned("lin", true);
+        QCOMPARE(firstId(), QString("lin"));
+        QVERIFY(proxy->index(0,0).data(ConversationModel::Pinned).toBool());
+        Theme::instance().setMode(Theme::Dark);
+        QTest::qWait(40);
+        const auto preview = QDir::current().filePath("conversation-pins-preview.png");
+        QVERIFY(window->grab().save(preview));
+        Theme::instance().setMode(Theme::Light);
+        ConversationModel restored(service.get());
+        bool saved = false;
+        for (int row=0;row<restored.rowCount();++row)
+            if (restored.index(row).data(ConversationModel::Id).toString()=="lin")
+                saved=restored.index(row).data(ConversationModel::Pinned).toBool();
+        QVERIFY(saved);
+        QTest::qWait(2);
+        service->send("zhou", "排序检查");
+        QCOMPARE(firstId(), QString("lin"));
+        model->setPinned("lin", false);
+        QCOMPARE(firstId(), QString("zhou"));
+        QCOMPARE(controller->selectedId(), selected);
+        QCOMPARE(list->currentIndex().data(ConversationModel::Id).toString(), selected);
+        // Open the actual menu on a filtered row and trigger the captured conversation ID.
+        proxy->setQuery("文件我放在群里了");
+        QCOMPARE(proxy->rowCount(), 1);
+        const auto index = proxy->index(0,0);
+        const auto target = index.data(ConversationModel::Id).toString();
+        auto openMenu = [&] {
+            const auto point = list->visualRect(proxy->index(0,0)).center();
+            list->customContextMenuRequested(point);
+            return list->findChild<QMenu*>("conversationContextMenu");
+        };
+        auto* menu = openMenu();
+        QVERIFY(menu);
+        QCOMPARE(menu->actions().first()->text(), QString("置顶会话"));
+        menu->actions().first()->trigger();
+        menu->close();
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QVERIFY(proxy->index(0,0).data(ConversationModel::Pinned).toBool());
+        QCOMPARE(proxy->index(0,0).data(ConversationModel::Id).toString(), target);
+        menu = openMenu();
+        QVERIFY(menu);
+        QCOMPARE(menu->actions().first()->text(), QString("取消置顶"));
+        menu->actions().first()->trigger();
+        menu->close();
+        QVERIFY(!proxy->index(0,0).data(ConversationModel::Pinned).toBool());
+        proxy->setQuery({});
+    }
     void windowSizesAndDetails() {
         QCOMPARE(window->size(), QSize(1280, 800));
         QCOMPARE(window->minimumSize(), QSize(960, 640));
@@ -506,3 +562,4 @@ class MessagerTest : public QObject {
 };
 QTEST_MAIN(MessagerTest)
 #include "tst_messager.moc"
+

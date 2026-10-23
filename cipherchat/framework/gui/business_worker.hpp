@@ -34,12 +34,13 @@ struct AddFriend { std::string username; };
 struct RespondFriend { std::string username; bool accept; };
 struct Disconnect {};
 struct SetWorkspace { WorkspaceState state; };
+struct GameRelay { nlohmann::json value; };
 struct SocialRequest { nlohmann::json value; };
 struct LookupUid { std::string username; };
 using Command = std::variant<Authenticate, SendText, SendFile, ConfirmIdentity, InspectIdentity,
     CreateGroup, SendGroup, RetryGroup, TypeTo, ResumeFile, CancelFile, SetDirectEnabled,
     SearchUsers, AddFriend, RespondFriend, Disconnect, SetWorkspace,
-    CreateDeliveryBundle, ResumeDeliveryItem, CancelDeliveryBundle, ConfirmDelivery, LookupUid, SocialRequest>;
+    CreateDeliveryBundle, ResumeDeliveryItem, CancelDeliveryBundle, ConfirmDelivery, LookupUid, SocialRequest, GameRelay>;
 struct RestoredView {
     std::string username;
     PeerIdentity ownIdentity;
@@ -84,7 +85,8 @@ private:
     std::mutex mutex_;
     std::condition_variable wake_;
     struct QueuedCommand { Command command; std::string requestId; };
-    std::deque<QueuedCommand> commands_;
+    std::deque<QueuedCommand> commands_, realtimeCommands_;
+    std::atomic<std::int64_t> realtimeUntil_{0};
     void complete(const std::string&, std::optional<Error> = {}, std::string operationId = {});
     std::vector<WorkerEvent> events_;
     std::atomic<bool> stopping_{false}, overflow_{false}, authenticationFailed_{false};

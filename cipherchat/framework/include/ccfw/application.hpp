@@ -13,12 +13,13 @@ struct UserListEvent { std::vector<std::pair<std::string, bool>> users; };
 struct ContactListEvent { std::vector<std::pair<std::string, bool>> users; std::vector<std::string> incoming, outgoing; };
 struct StrangerListEvent { std::vector<std::pair<std::string, bool>> users; std::string query, after, next; };
 struct FriendResultEvent { bool ok; std::string username; std::string error; std::string state; };
+struct GameRelayEvent { nlohmann::json value; };
 struct SocialEvent { nlohmann::json value; };
 struct UserUidEvent { std::string username; std::int64_t uid = 0; };
 using ClientEvent = std::variant<AccountEvent, ChatRecord, FileProgress,
                                  PresenceEvent, TypingEvent, GroupSnapshot, GroupSendReport, PeerIdentity,
                                  UserListEvent, ContactListEvent, StrangerListEvent, FriendResultEvent,
-                                 MessageStageEvent, ConnectionSecurity, WorkspaceState, DeliveryBundle, Error, UserUidEvent, SocialEvent>;
+                                 MessageStageEvent, ConnectionSecurity, WorkspaceState, DeliveryBundle, Error, UserUidEvent, SocialEvent, GameRelayEvent>;
 // 队列由 GUI 适配器持有；publish 只入队。GUI 线程 drain 后刷新 Widgets。
 class IEventSink {
 public:
@@ -33,6 +34,7 @@ public:
     Result<> connect(const ConnectionOptions&);
     Result<> tick(); // 单业务线程，有限批次 poll，不能在 GUI 线程阻塞
     Result<> listContacts();
+    Result<> gameRelay(nlohmann::json request);
     Result<> social(nlohmann::json request);
     Result<> lookupUid(const std::string& username);
     Result<> searchUsers(const std::string& query, const std::string& after = {});
@@ -54,5 +56,6 @@ private:
     std::int64_t lastFlushMs_ = 0;
     bool tlsValidated_ = false;
     bool socialSupported_ = false;
+    bool gameRelaySupported_ = false;
 };
 } // namespace ccfw

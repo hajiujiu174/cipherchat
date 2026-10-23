@@ -1,0 +1,16 @@
+{
+  "repository": "https://github.com/JustDoIt0910/TankTroubleServer",
+  "commit": "9a66f7140063bb9291fcf787e457d05e73d2bd49",
+  "license": "MIT",
+  "compiled": [
+    "Maze",
+    "Object",
+    "Tank",
+    "Shell",
+    "Block",
+    "util/Math",
+    "util/Vec"
+  ],
+  "adapter": "src/services/tankengine.cpp",
+  "ui": "src/ui/tankpage.cpp"
+}

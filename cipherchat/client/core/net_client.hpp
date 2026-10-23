@@ -81,6 +81,9 @@ private:
     // 出站帧队列：send() 生产，收发线程消费
     std::mutex outboxMutex_;
     std::deque<std::string> outbox_;
+    struct RealtimeFrame {std::string key,frame;};
+    std::deque<RealtimeFrame> gameOutbox_;
+    std::atomic<std::int64_t> realtimeUntil_{0};
     std::size_t outboxBytes_ = 0;
     std::string username_;
     std::string host_;         // SNI 用；握手移交给收发线程后需在此持有

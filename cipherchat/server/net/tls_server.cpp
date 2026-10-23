@@ -8,6 +8,7 @@
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #endif
@@ -73,7 +74,7 @@ public:
     void shutdown();
 
 private:
-    bool enqueueFrame(const std::string& payload);
+    bool enqueueFrame(const std::string& payload,bool game=false,const std::string& key={});
     bool drainOutbox(bool update = false);
     bool waitReadable(int timeoutMs) const;
 
@@ -83,8 +84,11 @@ private:
     std::string username_;
     std::mutex outboxMutex_;
     std::deque<std::string> outbox_;
+    struct GameFrame {std::string key,frame;};
+    std::deque<GameFrame> gameOutbox_;
     std::size_t outboxBytes_ = 0;
     std::atomic<bool> closed_{false};
+    std::atomic<std::int64_t> realtimeUntil_{0};
 };
 
 TlsServer::TlsPeer::~TlsPeer() {
@@ -96,15 +100,28 @@ TlsServer::TlsPeer::~TlsPeer() {
 }
 
 void TlsServer::TlsPeer::deliver(const cc::proto::Message& msg) {
-    if (!enqueueFrame(cc::proto::serialize(msg))) shutdown();
+    const bool game=msg.type==cc::proto::MsgType::GameRelay;std::string key;
+    if(game){
+        realtimeUntil_=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()+3000;
+        const auto data=msg.body.value("data",nlohmann::json::object());
+        auto text=[](const nlohmann::json& j,const char* name){auto i=j.find(name);return i!=j.end()&&i->is_string()?i->get<std::string>():std::string{};};
+        if(data.is_object()){const auto type=text(data,"type");
+            if(type=="state"||(type=="input"&&data.contains("net")&&data["net"]==2))key=text(msg.body,"from")+"/"+text(data,"room")+"/"+text(data,"run")+"/"+type;}
+    }
+    if (!enqueueFrame(cc::proto::serialize(msg),game,key)) shutdown();
 }
 
-bool TlsServer::TlsPeer::enqueueFrame(const std::string& payload) {
+bool TlsServer::TlsPeer::enqueueFrame(const std::string& payload,bool game,const std::string& key) {
     if (closed_.load()) return false;
     const std::string frame = cc::proto::encodeFrame(payload);
     std::lock_guard<std::mutex> lock(outboxMutex_);
+    if(game&&!key.empty())for(auto& old:gameOutbox_)if(old.key==key){
+        if(outboxBytes_-old.frame.size()+frame.size()>cc::net::kOutboxMaxBytes)return false;
+        outboxBytes_-=old.frame.size();old.frame=frame;outboxBytes_+=frame.size();return true;
+    }
+    if(game){if(gameOutbox_.size()>=16||outboxBytes_+frame.size()>cc::net::kOutboxMaxBytes)return false;outboxBytes_+=frame.size();gameOutbox_.push_back({key,frame});return true;}
     if (outbox_.size() >= cc::net::kOutboxMaxFrames ||
-        outboxBytes_ + frame.size() > cc::net::kOutboxMaxBytes) {
+        outboxBytes_ + frame.size() > cc::net::kOutboxMaxBytes-128*1024) {
         return false;  // 触顶：受控失败
     }
     outboxBytes_ += frame.size();
@@ -116,7 +133,8 @@ bool TlsServer::TlsPeer::drainOutbox(bool update) {
     std::deque<std::string> batch;
     {
         std::lock_guard<std::mutex> lock(outboxMutex_);
-        batch.swap(outbox_);
+        if(!gameOutbox_.empty()){batch.push_back(std::move(gameOutbox_.front().frame));gameOutbox_.pop_front();}
+        else if(!outbox_.empty()){batch.push_back(std::move(outbox_.front()));outbox_.pop_front();}
     }
     while (!batch.empty()) {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(update ? 60 : 5);
@@ -156,6 +174,8 @@ bool TlsServer::TlsPeer::waitReadable(int timeoutMs) const {
 }
 
 void TlsServer::TlsPeer::run() {
+    const int noDelay=1;
+    ::setsockopt(static_cast<SOCKET>(socket_),IPPROTO_TCP,TCP_NODELAY,reinterpret_cast<const char*>(&noDelay),sizeof(noDelay));
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (!closed_) {
         const auto result = SSL_accept(ssl_);
@@ -170,7 +190,9 @@ void TlsServer::TlsPeer::run() {
         // 出站帧（含广播）统一在本线程写出
         if (!drainOutbox()) break;
 
-        if (SSL_pending(ssl_) == 0 && !waitReadable(25)) continue;
+        const auto now=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        bool queued=false;{std::lock_guard lock(outboxMutex_);queued=!gameOutbox_.empty()||!outbox_.empty();}
+        if (SSL_pending(ssl_) == 0 && !waitReadable(queued?0:(now<realtimeUntil_?3:25))) continue;
 
         const int n = SSL_read(ssl_, chunk.data(), kRecvChunk);
         if (n <= 0) {

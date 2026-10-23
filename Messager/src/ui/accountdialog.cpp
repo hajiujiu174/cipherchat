@@ -45,7 +45,7 @@ class RememberCheck final : public QCheckBox {
 };
 class BrandMark final : public QLabel {
   public:
-    BrandMark() { setFixedSize(78,78);setPixmap(applicationIcon().pixmap(78,78));setAccessibleName("CipherChat 聊天图标"); }
+    BrandMark() { setFixedSize(78,78);setPixmap(applicationIcon().pixmap(78,78));setAccessibleName("NEXTALK 聊天图标"); }
 };
 } // namespace
 AccountDialog::AccountDialog(ChatService* service, QWidget* parent)
@@ -62,7 +62,7 @@ AccountDialog::AccountDialog(ChatService* service, QWidget* parent)
     layout->setSpacing(0);
     layout->addWidget(new BrandMark, 0, Qt::AlignHCenter);
     layout->addSpacing(15);
-    auto* title = new QLabel("CipherChat");
+    auto* title = new QLabel("NEXTALK");
     title->setObjectName("authTitle");
     title->setAlignment(Qt::AlignCenter);
     layout->addWidget(title);
@@ -277,14 +277,14 @@ void AccountDialog::setRegistration(bool registration) {
             gap->changeSize(0, registration ? qMin(m_regularGaps[gap], 12) : m_regularGaps[gap], QSizePolicy::Minimum, QSizePolicy::Fixed);
         }
     }
-    setWindowTitle(registration ? "CipherChat · 注册" : "CipherChat · 登录");
+    setWindowTitle(registration ? "NEXTALK · 注册" : "NEXTALK · 登录");
     m_tagline->setText(registration ? "创建账号 · 开始聊天" : "与联系人保持联系");
     findChild<QWidget*>("confirmationArea")->setVisible(registration);
     findChild<QWidget*>("registrationEmailArea")->setVisible(registration);
     findChild<QWidget*>("confirmationArea")->layout()->setContentsMargins(0, registration ? 10 : 17, 0, 0);
     findChild<QWidget*>("registrationEmailArea")->layout()->setContentsMargins(0, 10, 0, 0);
     // Keep the register form within an ordinary desktop height.
-    for (auto* mark : findChildren<QWidget*>()) if (mark->accessibleName() == "CipherChat 锁形标志") mark->setVisible(!registration);
+    for (auto* mark : findChildren<QWidget*>()) if (mark->accessibleName() == "NEXTALK 锁形标志") mark->setVisible(!registration);
     for (auto* field : {m_username, m_password, m_confirmation}) field->setFixedHeight(registration ? 44 : 54);
     m_emailCode->clear(); m_codeStatus->hide();
     updateCodeButton();
@@ -301,7 +301,7 @@ void AccountDialog::setPasswordReset(bool reset) {
     m_registration=false;
     m_rememberUser->hide(); m_rememberPassword->hide();
     findChild<QLabel*>("accountEmailCaption")->setText("已绑定邮箱");
-    setWindowTitle("CipherChat · 重置密码");
+    setWindowTitle("NEXTALK · 重置密码");
     m_tagline->setText("使用已验证邮箱重置密码");
     m_password->setPlaceholderText("请输入至少 6 位的新密码");
     m_confirmationLabel->setText("确认新密码");
@@ -389,7 +389,7 @@ void AccountDialog::showConnectionSettings() {
     auto* dialog = new QDialog(this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setObjectName("connectionDialog");
-    dialog->setWindowTitle("CipherChat · 连接设置");
+    dialog->setWindowTitle("NEXTALK · 连接设置");
     dialog->setMinimumWidth(500);
     auto* layout = new QVBoxLayout(dialog);
     layout->setContentsMargins(24, 22, 24, 22);

@@ -6,6 +6,9 @@
 #include "ui/mainwindow.h"
 #include "ui/profilepage.h"
 #include "ui/miniappspage.h"
+#include "ui/tankpage.h"
+#include "ui/badmintonpage.h"
+#include "ui/chesspage.h"
 #include "ui/gomokupage.h"
 #include "services/gomokuwire.h"
 #include "ccfw/local_store.hpp"
@@ -46,12 +49,17 @@ class LocalServer {
     cc::server::Router router;
     cc::server::TlsServer tls;
     std::future<bool> thread;
+    QProcess udp;int udpPort=0;
     std::mutex mailMutex;
     std::map<std::string,std::string> mailCodes;
     std::string code(const std::string& email) { std::lock_guard lock(mailMutex); return mailCodes[email]; }
     explicit LocalServer(const QString& directory)
         : path(directory.toStdWString()), storage((path / "server.db").string()), router(storage),
           tls(router, (path / "cert.pem").string(), (path / "key.pem").string()) {
+        udp.start("python",{QString::fromUtf8(GAME_UDP_SCRIPT),"--bind","127.0.0.1","--port","0"});
+        if(!udp.waitForStarted(5000)||!udp.waitForReadyRead(5000))qFatal("UDP relay unavailable");
+        udpPort=QJsonDocument::fromJson(udp.readLine()).object()["port"].toInt();
+        if(!udpPort)qFatal("UDP relay port missing");
         router.setFileCacheEnabled(false);
         router.requireRegistrationEmail(std::make_shared<cc::server::RegistrationEmail>([this](const auto& email, const auto& code) {
             std::lock_guard lock(mailMutex); mailCodes[email] = code; return std::string{};
@@ -65,6 +73,7 @@ class LocalServer {
             qFatal("Loopback test server failed to start");
     }
     ~LocalServer() {
+        udp.terminate();if(!udp.waitForFinished(3000)){udp.kill();udp.waitForFinished();}
         tls.stop();
         if (thread.valid())
             thread.wait();
@@ -81,7 +90,7 @@ class LiveTest : public QObject {
                 {"caFile", root + "/server/cert.pem"},
                 {"dataDirectory", root + "/" + user},
                 {"username", user},
-                {"directEnabled", false}};
+                {"directEnabled", false}, {"gameUdpPort",server->udpPort}};
     }
     bool waitUntil(const std::function<bool()>& predicate, int timeout = 15000) {
         QElapsedTimer timer;
@@ -195,6 +204,8 @@ class LiveTest : public QObject {
         auto clean=store.load();QVERIFY(clean);QVERIFY(!clean.value().identity);QVERIFY(clean.value().sessions.empty());QVERIFY(clean.value().trustedPeers.empty());
         QCOMPARE(reader.seals,0);QCOMPARE(reader.reads,0);
         auto legacy=nlohmann::json(clean.value());legacy["format"]=1;legacy["identity"]={{"private","archived-key-sentinel"}};
+        ccfw::TransferCheckpoint oldComplete;oldComplete.fileId="legacy-completed-file";oldComplete.peer="friend";oldComplete.complete=true;oldComplete.finalPath=std::filesystem::path((root+"/kept-download.txt").toStdWString());
+        legacy["transfers"]=nlohmann::json::array({nlohmann::json(oldComplete)});
         const auto cbor=nlohmann::json::to_cbor(legacy);cc::Bytes old="LEGACY:";old.append(reinterpret_cast<const char*>(cbor.data()),cbor.size());
         store.close();sqlite3* db=nullptr;QCOMPARE(sqlite3_open(file.string().c_str(),&db),SQLITE_OK);
         sqlite3_stmt* query=nullptr;QCOMPARE(sqlite3_prepare_v2(db,"UPDATE client_state SET protected_snapshot=?",-1,&query,nullptr),SQLITE_OK);
@@ -203,6 +214,21 @@ class LiveTest : public QObject {
         QCOMPARE(imported.value().history.front().text,std::string("ordinary visible message"));QVERIFY(!imported.value().identity);QVERIFY(imported.value().outbox.empty());
         QVERIFY(std::filesystem::exists(file.string()+".before-ordinary.bak"));QCOMPARE(reader.seals,0);QVERIFY(reader.reads>0);
         const auto persisted=nlohmann::json(imported.value()).dump();QVERIFY(persisted.find("archived-key-sentinel")==std::string::npos);QVERIFY(persisted.find("\"identity\"")==std::string::npos);
+        QCOMPARE(imported.value().transfers.front().transportVersion,2u);QVERIFY(imported.value().transfers.front().complete);QVERIFY(!imported.value().transfers.front().cancelled);
+        // Reproduce the first ordinary release: completed legacy files stayed on
+        // protocol 3 and regenerated a conflicting file acknowledgement on login.
+        auto faulty=imported.value();faulty.transfers.front().transportVersion=3;
+        faulty.outbox.push_back({"fack:legacy-completed-file:0",scope.username,"friend","file_ack","e30=",0,123});
+        faulty.outbox.push_back(sent.value()); // An unrelated pending chat must remain.
+        ccfw::TransferCheckpoint fresh;fresh.fileId="new-ordinary-file";fresh.peer="friend";faulty.transfers.push_back(fresh);
+        const auto revision=faulty.revision++;QVERIFY(store.commit(revision,faulty));store.close();
+        QVERIFY(store.open(file,scope));auto repaired=store.load();QVERIFY(repaired);
+        QCOMPARE(repaired.value().outbox.size(),std::size_t(1));QCOMPARE(repaired.value().outbox.front().messageId,std::string("plain-1"));
+        QCOMPARE(repaired.value().transfers.front().transportVersion,2u);QVERIFY(repaired.value().transfers.front().complete);
+        QCOMPARE(repaired.value().transfers.front().finalPath,oldComplete.finalPath);QCOMPARE(repaired.value().transfers.back().transportVersion,3u);
+        QCOMPARE(repaired.value().history.size(),std::size_t(1));QCOMPARE(repaired.value().history.front().text,std::string("ordinary visible message"));
+        QVERIFY(std::filesystem::exists(file.string()+".before-legacy-files.bak"));
+        const auto repairedRevision=repaired.value().revision;store.close();QVERIFY(store.open(file,scope));QCOMPARE(store.load().value().revision,repairedRevision);
         store.close();
     }
     void loginFromFreshDeviceWithoutPrivateKeys() {
@@ -939,7 +965,8 @@ class LiveTest : public QObject {
         alice.addFriend("gomoku_bob");QVERIFY(waitUntil([&]{return bob.incomingRequests().contains("gomoku_alice");}));
         bob.respondFriend("gomoku_alice",true);QVERIFY(waitUntil([&]{return alice.isFriend("gomoku_bob")&&bob.isFriend("gomoku_alice");}));
         aw.show();bw.show();aw.showPage(7);auto* mini=aw.findChild<MiniAppsPage*>();mini->openApp("gomoku");
-        auto* ap=aw.findChild<GomokuPage*>();auto* bp=bw.findChild<GomokuPage*>();QVERIFY(ap&&bp);
+        auto* ap=aw.findChild<GomokuPage*>("gomokuPage");auto* bp=bw.findChild<GomokuPage*>("gomokuPage");QVERIFY(ap&&bp);
+        QCOMPARE(ap->controller()->gameId(),QString("gomoku"));QCOMPARE(bp->controller()->gameId(),QString("gomoku"));
         auto* friendPicker=ap->findChild<QComboBox*>("gomokuFriends");QVERIFY(friendPicker);friendPicker->setCurrentIndex(friendPicker->findData("gomoku_bob"));
         QTest::mouseClick(ap->findChild<QPushButton*>("gomokuCreate"),Qt::LeftButton);
         QVERIFY(!ap->controller()->rooms().isEmpty());const auto id=ap->controller()->rooms().first().id;
@@ -979,6 +1006,274 @@ class LiveTest : public QObject {
         QVERIFY(waitUntil([&]{return ap->controller()->room(next).started&&bp->controller()->room(next).started;}));
         bp->controller()->leave(next);QVERIFY(waitUntil([&]{return ap->controller()->room(next).closed&&bp->controller()->room(next).closed;}));
         QCOMPARE(ap->controller()->room(next).resigned,QString("gomoku_bob"));QVERIFY(!bp->controller()->join(next));
+    }
+    void moreOnlineGames_data() {
+        QTest::addColumn<QString>("game");
+        QTest::newRow("connectfour") << QString("connectfour");
+        QTest::newRow("reversi") << QString("reversi");
+    }
+    void chessOnlineGames_data(){QTest::addColumn<QString>("game");QTest::newRow("chess")<<QString("chess");QTest::newRow("xiangqi")<<QString("xiangqi");}
+    void chessOnlineGames() {
+        QFETCH(QString,game);
+        const auto hostName=game+"_host",guestName=game+"_guest";
+        CipherChatService alice(config(hostName)),bob(config(guestName));
+        AppController ac(&alice),bc(&bob);MainWindow aw(&ac),bw(&bc);
+        signUp(aw);QVERIFY(waitUntil([&]{return alice.online();}));
+        signUp(bw);QVERIFY(waitUntil([&]{return bob.online();}));
+        alice.addFriend(guestName);QVERIFY(waitUntil([&]{return bob.incomingRequests().contains(hostName);}));
+        bob.respondFriend(hostName,true);QVERIFY(waitUntil([&]{return alice.isFriend(guestName)&&bob.isFriend(hostName);}));
+        aw.show();bw.show();aw.showPage(7);aw.findChild<MiniAppsPage*>()->openApp(game);
+        auto* ap=aw.findChild<ChessPage*>(game+"Page");auto* bp=bw.findChild<ChessPage*>(game+"Page");QVERIFY(ap&&bp);
+        auto* friends=ap->findChild<QComboBox*>("chessFriends");friends->setCurrentIndex(friends->findData(guestName));
+        QTest::mouseClick(ap->findChild<QPushButton*>("chessCreate"),Qt::LeftButton);
+        QVERIFY(!ap->controller()->rooms().isEmpty());const auto id=ap->controller()->rooms().first().id;
+        QVERIFY(waitUntil([&]{return !bp->controller()->room(id).id.isEmpty();}));
+        bc.selectConversation("peer:"+hostName);bw.showPage(0);QTest::qWait(100);
+        auto* invite=bw.findChild<QPushButton*>("joinGomoku_"+id);QVERIFY(invite&&invite->isVisible());
+        QVERIFY(bw.grab().save(evidence+"/"+game+"-invitation.png"));
+        QTest::mouseClick(invite,Qt::LeftButton);
+        QVERIFY(waitUntil([&]{return ap->controller()->room(id).started&&bp->controller()->room(id).started;}));
+        QVERIFY(bp->isVisible());QVERIFY(ap->controller()->canMove(id));QVERIFY(!bp->controller()->canMove(id));
+        QVERIFY(!bp->controller()->move(id,"a1a2"));
+        QVERIFY(ap->isFullScreen()&&bp->isFullScreen());
+        const QStringList sequence=game=="chess"?QStringList{"f2f3","e7e5","g2g4","d8h4"}:QStringList{"h2e2","h9g7","h0g2","b9c7","a3a4"};
+        int count=0;
+        for(const auto& code:sequence){
+            auto* page=count%2==0?ap:bp;auto* board=page->findChild<ChessBoard*>();QVERIFY(board);
+            const int from=ChessRules::from(game,code),to=ChessRules::to(game,code),cols=game=="chess"?8:9;
+            QTest::mouseClick(board,Qt::LeftButton,{},board->cellCenter(from%cols,from/cols));
+            QTest::mouseClick(board,Qt::LeftButton,{},board->cellCenter(to%cols,to/cols));++count;
+            QVERIFY2(waitUntil([&]{return ap->controller()->room(id).moves.size()==count&&bp->controller()->room(id).moves.size()==count;}),qPrintable(game+" "+code+" "+ap->controller()->lastError()+" "+bp->controller()->lastError()));
+            QCOMPARE(ap->controller()->room(id).board,bp->controller()->room(id).board);
+            if(count==1){QVERIFY(!bp->controller()->move(id,"a9a8q"));QCOMPARE(ap->controller()->room(id).moves.size(),1);}
+            if(count==2){
+                bob.disconnectAccount();QVERIFY(waitUntil([&]{return !bob.online();}));QVERIFY(!bp->controller()->canMove(id));
+                auto login=config(guestName);login["password"]="MessagerTest-2026!";bob.authenticate(login);QVERIFY(waitUntil([&]{return bob.online()&&bp->controller()->room(id).moves.size()==2;}));
+                bw.findChild<MiniAppsPage*>()->openApp(game);
+                const auto forged=QJsonObject{{"type","state"},{"game",game},{"room",id},{"black",hostName},{"white",guestName},{"seq",9999},{"moves",QJsonArray{}},{"started",true},{"closed",false}};
+                QVERIFY(!bob.send("peer:"+hostName,GomokuWire::encode(forged)).isEmpty());QTest::qWait(100);QCOMPARE(ap->controller()->room(id).moves.size(),2);
+            }
+        }
+        if(game=="chess"){QCOMPARE(ap->controller()->room(id).winner,2);QCOMPARE(bp->controller()->room(id).winner,2);}
+        else{QVERIFY(!bp->controller()->room(id).winner);}
+        Theme::instance().setMode(Theme::Light);QTest::qWait(40);QVERIFY(ap->grab().save(evidence+"/"+game+"-online-light.png"));
+        Theme::instance().setMode(Theme::Dark);QTest::qWait(40);QVERIFY(bp->grab().save(evidence+"/"+game+"-online-dark.png"));Theme::instance().setMode(Theme::Light);
+        {ChessController restored(&alice,nullptr,game);QVERIFY(waitUntil([&]{return restored.room(id).moves.size()==sequence.size();}));QCOMPARE(restored.room(id).board,ap->controller()->room(id).board);}
+        QVERIFY(!alice.conversation("peer:"+guestName).preview.contains(GomokuWire::gameMarker()));
+        ap->close();QVERIFY(!ap->isVisible());aw.findChild<MiniAppsPage*>()->openApp(game);QCOMPARE(ap->controller()->room(id).moves.size(),sequence.size());
+        if(game=="xiangqi"){bp->controller()->leave(id);QVERIFY(waitUntil([&]{return ap->controller()->room(id).closed&&bp->controller()->room(id).closed;}));QCOMPARE(ap->controller()->room(id).resigned,guestName);}
+    }
+
+    void moreOnlineGames() {
+        QFETCH(QString,game);
+        const auto hostName=game+"_host",guestName=game+"_guest";
+        CipherChatService alice(config(hostName)),bob(config(guestName));
+        AppController ac(&alice),bc(&bob);MainWindow aw(&ac),bw(&bc);
+        signUp(aw);QVERIFY(waitUntil([&]{return alice.online();}));
+        signUp(bw);QVERIFY(waitUntil([&]{return bob.online();}));
+        alice.addFriend(guestName);QVERIFY(waitUntil([&]{return bob.incomingRequests().contains(hostName);}));
+        bob.respondFriend(hostName,true);QVERIFY(waitUntil([&]{return alice.isFriend(guestName)&&bob.isFriend(hostName);}));
+        aw.show();bw.show();aw.showPage(7);aw.findChild<MiniAppsPage*>()->openApp(game);
+        auto* ap=aw.findChild<GomokuPage*>(game+"Page");auto* bp=bw.findChild<GomokuPage*>(game+"Page");QVERIFY(ap&&bp);
+        auto* friends=ap->findChild<QComboBox*>("gomokuFriends");friends->setCurrentIndex(friends->findData(guestName));
+        QTest::mouseClick(ap->findChild<QPushButton*>("gomokuCreate"),Qt::LeftButton);
+        QVERIFY(!ap->controller()->rooms().isEmpty());const auto id=ap->controller()->rooms().first().id;
+        QVERIFY(waitUntil([&]{return !bp->controller()->room(id).id.isEmpty();}));
+        QVERIFY(aw.findChild<GomokuPage*>("gomokuPage")->controller()->rooms().isEmpty());
+        bc.selectConversation("peer:"+hostName);bw.showPage(0);QTest::qWait(100);
+        auto* invite=bw.findChild<QPushButton*>("joinGomoku_"+id);QVERIFY(invite&&invite->isVisible());
+        QVERIFY(bw.grab().save(evidence+"/"+game+"-invitation.png"));
+        QTest::mouseClick(invite,Qt::LeftButton);
+        QVERIFY(waitUntil([&]{return ap->controller()->room(id).started&&bp->controller()->room(id).started;}));
+        QVERIFY(bp->isVisible());QVERIFY(ap->controller()->canMove(id));QVERIFY(!bp->controller()->canMove(id));
+        QVERIFY(!bp->controller()->move(id,0,0));
+        bool resumed=false;
+        for(int count=1;count<=60 && !ap->controller()->room(id).winner;++count) {
+            const auto before=ap->controller()->room(id);
+            auto* page=before.turn==1?ap:bp;
+            QPoint move;
+            if(game=="connectfour")move={before.turn==1?0:1,0};
+            else {const auto legal=GomokuController::legalMoves(before);QVERIFY(!legal.isEmpty());move=legal.first();}
+            auto* board=page->findChild<GomokuBoard*>();QVERIFY(board);
+            QTest::mouseClick(board,Qt::LeftButton,{},board->cellCenter(move.x(),move.y()));
+            QVERIFY2(waitUntil([&]{return ap->controller()->room(id).moves.size()==count&&bp->controller()->room(id).moves.size()==count;}),qPrintable(game+" ply "+QString::number(count)+" / "+ap->controller()->lastError()+" / "+bp->controller()->lastError()));
+            QCOMPARE(ap->controller()->room(id).board,bp->controller()->room(id).board);
+            QCOMPARE(ap->controller()->room(id).turn,bp->controller()->room(id).turn);
+            if(count==2) {
+                bob.disconnectAccount();QVERIFY(waitUntil([&]{return !bob.online();}));QVERIFY(!bp->controller()->canMove(id));
+                auto login=config(guestName);login["password"]="MessagerTest-2026!";bob.authenticate(login);
+                QVERIFY(waitUntil([&]{return bob.online()&&bp->controller()->room(id).started&&bp->controller()->room(id).moves.size()==2;}));
+                bw.show();bw.showPage(7);bw.findChild<MiniAppsPage*>()->openApp(game);resumed=true;
+                const auto forged=QJsonObject{{"type","state"},{"game",game},{"room",id},{"black",hostName},{"white",guestName},{"seq",9999},{"moves",QJsonArray{}},{"started",true},{"closed",false}};
+                QVERIFY(!bob.send("peer:"+hostName,GomokuWire::encode(forged)).isEmpty());QTest::qWait(100);
+                QCOMPARE(ap->controller()->room(id).moves.size(),2);
+            }
+            if(count==4) {
+                Theme::instance().setMode(Theme::Light);QTest::qWait(80);QVERIFY(aw.grab().save(evidence+"/"+game+"-light.png"));
+                Theme::instance().setMode(Theme::Dark);QTest::qWait(80);QVERIFY(bw.grab().save(evidence+"/"+game+"-dark.png"));
+                Theme::instance().setSkin(Theme::PencilSkin);QTest::qWait(80);QVERIFY(aw.grab().save(evidence+"/"+game+"-pencil.png"));
+                Theme::instance().setSkin(Theme::DefaultSkin);Theme::instance().setMode(Theme::Light);
+            }
+        }
+        QVERIFY(resumed);QVERIFY(ap->controller()->room(id).winner>0);
+        QCOMPARE(ap->controller()->room(id).winner,bp->controller()->room(id).winner);
+        QVERIFY(!ap->controller()->canMove(id));QVERIFY(!bp->controller()->canMove(id));
+        QVERIFY(aw.grab().save(evidence+"/"+game+"-finished.png"));
+        GomokuController restored(&alice,nullptr,game);
+        QVERIFY(waitUntil([&]{return restored.room(id).winner>0;}));
+        QCOMPARE(restored.room(id).board,ap->controller()->room(id).board);
+        QVERIFY(!alice.conversation("peer:"+guestName).preview.contains(GomokuWire::gameMarker()));
+        const auto next=ap->controller()->create(guestName);QVERIFY(!next.isEmpty());
+        QVERIFY(waitUntil([&]{return !bp->controller()->room(next).id.isEmpty();}));QVERIFY(bp->controller()->join(next));
+        QVERIFY(waitUntil([&]{return ap->controller()->room(next).started&&bp->controller()->room(next).started;}));
+        bp->controller()->leave(next);QVERIFY(waitUntil([&]{return ap->controller()->room(next).closed&&bp->controller()->room(next).closed;}));
+        QCOMPARE(ap->controller()->room(next).resigned,guestName);
+    }
+    void badmintonOnlineGame() {
+        const QString hostName="badminton_host",guestName="badminton_guest";
+        CipherChatService alice(config(hostName)),bob(config(guestName));
+        AppController ac(&alice),bc(&bob);MainWindow aw(&ac),bw(&bc);
+        signUp(aw);QVERIFY(waitUntil([&]{return alice.online();}));
+        signUp(bw);QVERIFY(waitUntil([&]{return bob.online();}));
+        QVERIFY(alice.gameRelaySupported());QVERIFY(bob.gameRelaySupported());
+        QVERIFY(!alice.sendGamePacket(guestName,{{"type","join"}}));
+        alice.addFriend(guestName);QVERIFY(waitUntil([&]{return bob.incomingRequests().contains(hostName);}));
+        bob.respondFriend(hostName,true);QVERIFY(waitUntil([&]{return alice.isFriend(guestName)&&bob.isFriend(hostName);}));
+        aw.show();bw.show();aw.showPage(7);aw.findChild<MiniAppsPage*>()->openApp("badminton");
+        auto* ap=aw.findChild<BadmintonPage*>();auto* bp=bw.findChild<BadmintonPage*>();QVERIFY(ap&&bp);
+        auto* friends=ap->findChild<QComboBox*>("badmintonFriends");friends->setCurrentIndex(friends->findData(guestName));
+        QTest::mouseClick(ap->findChild<QPushButton*>("badmintonCreate"),Qt::LeftButton);
+        const auto room=ap->controller()->room();QVERIFY(!room.isEmpty());
+        QVERIFY(waitUntil([&]{return bp->findChild<QComboBox*>("badmintonInvitations")->count()>0;}));
+        bc.selectConversation("peer:"+hostName);bw.showPage(0);QTest::qWait(80);
+        auto* invite=bw.findChild<QPushButton*>("joinGomoku_"+room);QVERIFY(invite&&invite->isVisible());
+        QVERIFY(bw.grab().save(evidence+"/badminton-invitation.png"));QTest::mouseClick(invite,Qt::LeftButton);
+        QVERIFY(waitUntil([&]{return ap->controller()->active()&&bp->controller()->active();}));QVERIFY(bp->isVisible());
+        aw.showPage(7);aw.findChild<MiniAppsPage*>()->openApp("badminton");
+        int aliceHistory=alice.messages("peer:"+guestName).size(),bobHistory=bob.messages("peer:"+hostName).size();
+        auto* board=ap->findChild<BadmintonBoard*>();auto* guest=bp->findChild<BadmintonBoard*>();QVERIFY(board&&guest);
+        QVERIFY(ap->isFullScreen()&&bp->isFullScreen());
+        // File transfer uses the same TLS server (directEnabled=false in the fixture).
+        const auto loadPath=root+"/badminton-network-load.bin";QFile load(loadPath);QVERIFY(load.open(QIODevice::WriteOnly));
+        const QByteArray loadBytes(2*1024*1024,'L');QCOMPARE(load.write(loadBytes),loadBytes.size());load.close();
+        alice.sendFile(loadPath,"peer:"+guestName);
+        const auto initialGuest=bp->controller()->predictedState()["players"].toArray()[1].toArray()[0].toDouble();
+        QElapsedTimer feedback;feedback.start();QTest::keyPress(guest,Qt::Key_Left);
+        QVERIFY(waitUntil([&]{return std::abs(bp->controller()->predictedState()["players"].toArray()[1].toArray()[0].toDouble()-initialGuest)>2;},150));
+        QTest::keyRelease(guest,Qt::Key_Left);qInfo()<<"badminton file-load local feedback ms"<<feedback.elapsed();
+        QVERIFY(waitUntil([&]{for(const auto& t:bob.transfers())if(!t.outgoing&&t.state==TransferState::Completed&&t.name=="badminton-network-load.bin")return true;return false;},15000));
+        aliceHistory=alice.messages("peer:"+guestName).size();bobHistory=bob.messages("peer:"+hostName).size();
+        QTest::keyClick(board,Qt::Key_Space);
+        QVERIFY(waitUntil([&]{return ap->controller()->state()["hits"].toInt()>0;}));
+        QVERIFY(waitUntil([&]{return bp->controller()->state()["hits"].toInt()>0;}));
+        const auto x=ap->controller()->state()["players"].toArray()[1].toArray()[0].toDouble();
+        bp->activateWindow();guest->setFocus();QTest::keyPress(guest,Qt::Key_Left);QTest::qWait(240);QTest::keyRelease(guest,Qt::Key_Left);
+        QVERIFY(waitUntil([&]{return ap->controller()->state()["players"].toArray()[1].toArray()[0].toDouble()<x-10;}));
+        QTest::keyClick(guest,Qt::Key_Up);
+        QVERIFY(waitUntil([&]{return ap->controller()->state()["players"].toArray()[1].toArray()[1].toDouble()<520;}));
+        auto safe=bp->controller()->state();QJsonObject fake{{"type","state"},{"game","badminton"},{"room",room},{"run",GomokuWire::decode(bob.messages("peer:"+hostName).last().text)["run"]},{"v",1},{"state",QJsonObject{{"frame",999999}}}};
+        emit bob.gamePacket(hostName,fake);QCOMPARE(bp->controller()->state(),safe);
+        Theme::instance().setMode(Theme::Light);QTest::qWait(60);QVERIFY(ap->grab().save(evidence+"/badminton-online-light.png"));
+        const bool udpVerified=waitUntil([&]{return alice.gameTransportStats()["received"].toInt()>3&&bob.gameTransportStats()["received"].toInt()>3;});
+        if(!udpVerified)qWarning()<<"UDP failure diagnostics"<<alice.gameTransportStats()<<bob.gameTransportStats()<<server->udp.state()<<server->udp.readAllStandardError();
+        QVERIFY(udpVerified);
+        QCOMPARE(alice.gameTransport(guestName),QString("UDP"));QCOMPARE(bob.gameTransport(hostName),QString("UDP"));
+        qInfo()<<"UDP actual counters"<<alice.gameTransportStats()<<bob.gameTransportStats();
+        Theme::instance().setMode(Theme::Dark);QTest::qWait(60);QVERIFY(bp->grab().save(evidence+"/badminton-online-dark.png"));Theme::instance().setMode(Theme::Light);
+        bp->close();QVERIFY(!bp->isVisible());QCOMPARE(bp->controller()->room(),room);
+        bw.findChild<MiniAppsPage*>()->openApp("badminton");QVERIFY(bp->isVisible()&&bp->isFullScreen());
+        QTest::qWait(300);QCOMPARE(alice.messages("peer:"+guestName).size(),aliceHistory);QCOMPARE(bob.messages("peer:"+hostName).size(),bobHistory);
+        bp->controller()->leave();QVERIFY(waitUntil([&]{return ap->controller()->room().isEmpty();}));
+    }
+
+    void tankOnlineGame() {
+        const QString hostName="tank_host",guestName="tank_guest";
+        CipherChatService alice(config(hostName)),bob(config(guestName));
+        AppController ac(&alice),bc(&bob);MainWindow aw(&ac),bw(&bc);
+        signUp(aw);QVERIFY(waitUntil([&]{return alice.online();}));
+        signUp(bw);QVERIFY(waitUntil([&]{return bob.online();}));
+        QVERIFY(alice.gameRelaySupported());QVERIFY(bob.gameRelaySupported());
+        QVERIFY(!alice.sendGamePacket(guestName,{{"type","join"}}));
+        alice.addFriend(guestName);QVERIFY(waitUntil([&]{return bob.incomingRequests().contains(hostName);}));
+        bob.respondFriend(hostName,true);QVERIFY(waitUntil([&]{return alice.isFriend(guestName)&&bob.isFriend(hostName);}));
+        aw.show();bw.show();aw.showPage(7);aw.findChild<MiniAppsPage*>()->openApp("tanktrouble");
+        auto* ap=aw.findChild<TankPage*>();auto* bp=bw.findChild<TankPage*>();QVERIFY(ap&&bp);
+        auto* friends=ap->findChild<QComboBox*>("tankFriends");friends->setCurrentIndex(friends->findData(guestName));
+        QTest::mouseClick(ap->findChild<QPushButton*>("tankCreate"),Qt::LeftButton);
+        const auto room=ap->controller()->room();QVERIFY(!room.isEmpty());
+        QVERIFY(waitUntil([&]{return bp->findChild<QComboBox*>("tankInvitations")->count()>0;}));
+        bc.selectConversation("peer:"+hostName);bw.showPage(0);QTest::qWait(80);
+        auto* invite=bw.findChild<QPushButton*>("joinGomoku_"+room);QVERIFY(invite&&invite->isVisible());
+        QVERIFY(bw.grab().save(evidence+"/tank-invitation.png"));QTest::mouseClick(invite,Qt::LeftButton);
+        QVERIFY(waitUntil([&]{return ap->controller()->active()&&bp->controller()->active();}));QVERIFY(bp->isVisible());
+        aw.showPage(7);aw.findChild<MiniAppsPage*>()->openApp("tanktrouble");
+        const int aliceHistory=alice.messages("peer:"+guestName).size(),bobHistory=bob.messages("peer:"+hostName).size();
+        auto initial=ap->controller()->state();auto* board=ap->findChild<TankBoard*>();QVERIFY(board);
+        board->setFocus();QTest::keyPress(board,Qt::Key_W);QTest::qWait(160);QTest::keyRelease(board,Qt::Key_W);
+        auto moved=ap->controller()->state();QVERIFY(initial["tanks"].toArray()[0]!=moved["tanks"].toArray()[0]);
+        QApplication::setActiveWindow(ap);board->setFocus();QTest::qWait(30);
+        QMouseEvent hostMouse(QEvent::MouseMove,board->pointForArena(QPointF(80,30)),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QApplication::sendEvent(board,&hostMouse);
+        QVERIFY(ap->controller()->pointerActive());
+        QVERIFY(waitUntil([&]{auto t=ap->controller()->state()["tanks"].toArray()[0].toArray();return std::hypot(t[0].toDouble()-80,t[1].toDouble()-30)<=TankEngine::AimOnlyRadius+2;},3000));
+        const auto aimedFrom=ap->controller()->state()["tanks"].toArray()[0].toArray();
+        const QPointF nearTarget(aimedFrom[0].toDouble(),aimedFrom[1].toDouble()+20);
+        QMouseEvent nearMouse(QEvent::MouseMove,board->pointForArena(nearTarget),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QApplication::sendEvent(board,&nearMouse);
+        QTest::qWait(160);auto still=ap->controller()->state()["tanks"].toArray()[0].toArray();
+        QCOMPARE(still[0],aimedFrom[0]);QCOMPARE(still[1],aimedFrom[1]);
+        QVERIFY(std::abs(ap->controller()->state()["aim"].toArray()[0].toDouble()-270)<3);
+        QVERIFY(ap->grab().save(evidence+"/tank-aim-only-circle.png"));
+        // Margin/leave events release movement and fire without changing rooms.
+        QEvent leave(QEvent::Leave);QApplication::sendEvent(board,&leave);QVERIFY(!ap->controller()->pointerActive());
+        auto* guestBoard=bp->findChild<TankBoard*>();QVERIFY(guestBoard);
+        const auto guestInitial=ap->controller()->state()["tanks"].toArray()[1].toArray()[2].toDouble();
+        guestBoard->setFocus();QTest::keyPress(guestBoard,Qt::Key_D);QTest::qWait(300);QTest::keyRelease(guestBoard,Qt::Key_D);
+        QVERIFY(waitUntil([&]{return ap->controller()->state()["tanks"].toArray()[1].toArray()[2].toDouble()!=guestInitial;}));
+        QApplication::setActiveWindow(bp);guestBoard->setFocus();QTest::qWait(30);
+        QMouseEvent guestMouse(QEvent::MouseMove,guestBoard->pointForArena(QPointF(630,320)),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QApplication::sendEvent(guestBoard,&guestMouse);
+        QVERIFY(bp->controller()->pointerActive());
+        QVERIFY(waitUntil([&]{return ap->controller()->state()["tanks"].toArray()[1].toArray()[1].toDouble()<388;},3000));
+        QApplication::sendEvent(guestBoard,&leave);QVERIFY(!bp->controller()->pointerActive());QTest::qWait(200);
+        // Closing the separate window stops input but keeps the room available on reopen.
+        bp->close();QVERIFY(!bp->isVisible());QCOMPARE(bp->controller()->room(),room);
+        QVERIFY(!bp->controller()->pointerActive());
+        bw.findChild<MiniAppsPage*>()->openApp("tanktrouble");
+        QVERIFY(bp->isWindow()&&bp->isFullScreen());QCOMPARE(bp->controller()->room(),room);
+        QJsonObject received;QSignalSpy packets(&bob,&ChatService::gamePacket);
+        QVERIFY(waitUntil([&]{for(auto args:packets)if(args[1].toJsonObject()["type"]=="state") {received=args[1].toJsonObject();return true;}return false;}));
+        auto reconstructed=received["state"].toObject();
+        if(!reconstructed.contains("walls"))reconstructed["walls"]=bp->controller()->state().value("walls");
+        QVERIFY(TankEngine::validSnapshot(reconstructed));received["state"]=reconstructed;
+        auto altered=received;altered["room"]=QString(32,'0');emit bob.gamePacket(hostName,altered);
+        QCOMPARE(bp->controller()->room(),room);
+        auto bad=received;auto state=bad["state"].toObject();state["frame"]=100000;state["tanks"]=QJsonArray{};bad["state"]=state;
+        const auto before=bp->controller()->state();emit bob.gamePacket(hostName,bad);QCOMPARE(bp->controller()->state(),before);
+        auto malicious=received;malicious["type"]="input";malicious["seq"]=999999;malicious["buttons"]=1;malicious["mouse"]=true;malicious["target"]=QJsonArray{99999,30};
+        const auto safe=ap->controller()->state();emit alice.gamePacket(guestName,malicious);QCOMPARE(ap->controller()->state(),safe);
+        // Guest position snapshots cannot overwrite the authoritative host simulation.
+        const auto hostBefore=ap->controller()->state();emit alice.gamePacket(guestName,received);QCOMPARE(ap->controller()->state(),hostBefore);
+        // One fast left click must survive release before the next simulation tick.
+        ap->activateWindow();board->setFocus();
+        QTest::mouseClick(board,Qt::LeftButton,{},board->pointForArena(QPointF(80,30)),0);
+        QVERIFY(waitUntil([&]{auto s=ap->controller()->state();return !s["shots"].toArray().isEmpty()||!s["tanks"].toArray()[0].toArray()[3].toBool();}));
+        Theme::instance().setMode(Theme::Light);QTest::qWait(60);QVERIFY(ap->grab().save(evidence+"/tank-online-light.png"));
+        QVERIFY(waitUntil([&]{return alice.gameTransportStats()["received"].toInt()>3&&bob.gameTransportStats()["received"].toInt()>3;}));
+        QCOMPARE(alice.gameTransport(guestName),QString("UDP"));QCOMPARE(bob.gameTransport(hostName),QString("UDP"));
+        qInfo()<<"UDP actual counters"<<alice.gameTransportStats()<<bob.gameTransportStats();
+        Theme::instance().setMode(Theme::Dark);QTest::qWait(60);QVERIFY(bp->grab().save(evidence+"/tank-online-dark.png"));Theme::instance().setMode(Theme::Light);
+        QTest::qWait(1200);QCOMPARE(alice.messages("peer:"+guestName).size(),aliceHistory);QCOMPARE(bob.messages("peer:"+hostName).size(),bobHistory);
+        bp->controller()->leave();QVERIFY(waitUntil([&]{return ap->controller()->room().isEmpty();}));
+        // A second room works, then a real disconnect cancels guest input and pauses host.
+        QVERIFY(ap->controller()->create(guestName));QVERIFY(waitUntil([&]{return bp->findChild<QComboBox*>("tankInvitations")->count()>=2;}));
+        const auto id=ap->controller()->room();Message invitation;
+        for(auto m:bob.messages("peer:"+hostName))if(GomokuWire::decode(m.text)["room"]==id)invitation=m;
+        QVERIFY(!invitation.text.isEmpty());bp->openInvitation(invitation);QVERIFY(waitUntil([&]{return bp->controller()->active();}));
+        bw.showPage(7);bw.findChild<MiniAppsPage*>()->openApp("tanktrouble");bp->activateWindow();guestBoard->setFocus();
+        QTest::mouseClick(guestBoard,Qt::LeftButton,{},guestBoard->pointForArena(QPointF(630,390)),0);
+        QVERIFY(waitUntil([&]{auto s=ap->controller()->state();for(auto v:s["shots"].toArray())if(v.toArray()[3].toInt()==1)return true;return !s["tanks"].toArray()[1].toArray()[3].toBool();}));
+        bob.disconnectAccount();QVERIFY(waitUntil([&]{return !bob.online()&&bp->controller()->room().isEmpty();}));
+        QVERIFY(waitUntil([&]{return ap->controller()->status().contains("暂停");}));
+        const int pausedFrame=ap->controller()->state()["frame"].toInt();QTest::qWait(200);QCOMPARE(ap->controller()->state()["frame"].toInt(),pausedFrame);
+        ap->controller()->leave();
     }
     void cleanupTestCase() {
         server.reset();

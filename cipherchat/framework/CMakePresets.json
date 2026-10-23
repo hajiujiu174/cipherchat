@@ -1,0 +1,138 @@
+{
+  "version": 5,
+  "configurePresets": [
+    {
+      "name": "core-debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/framework-core",
+      "environment": {
+        "PATH": "D:/msys64/mingw64/bin;$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "ON",
+        "CCFW_BUILD_GUI": "OFF",
+        "CCFW_BUILD_GUI_TESTS": "OFF",
+        "CCFW_BUILD_DELIVERY_TESTS": "OFF",
+        "CMAKE_CXX_COMPILER": "D:/msys64/mingw64/bin/g++.exe"
+      }
+    },
+    {
+      "name": "implementation-debug",
+      "inherits": "core-debug",
+      "binaryDir": "${sourceDir}/build/framework-implementation",
+      "cacheVariables": {
+        "CCFW_LINK_EXISTING": "ON"
+      }
+    },
+    {
+      "name": "desktop-debug",
+      "inherits": "core-debug",
+      "binaryDir": "${sourceDir}/build/framework-desktop-qt1310",
+      "environment": {
+        "PATH": "C:/Qt/Tools/mingw1310_64/bin;C:/Qt/6.11.2/mingw_64/bin;D:/msys64/mingw64/bin;$penv{PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "C:/Qt/Tools/mingw1310_64/bin/g++.exe",
+        "CCFW_BUILD_GUI": "ON",
+        "CCFW_BUILD_GUI_TESTS": "ON",
+        "CCFW_BUILD_DELIVERY_TESTS": "ON",
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.11.2/mingw_64",
+        "CCFW_LINK_EXISTING": "ON"
+      }
+    },
+    {
+      "name": "verification",
+      "inherits": "desktop-debug",
+      "binaryDir": "${sourceDir}/build/verification",
+      "cacheVariables": {
+        "CCFW_BUILD_DELIVERY_TESTS": "OFF",
+        "CCFW_BUILD_RHINE_NATIVE": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "core-debug",
+      "configurePreset": "core-debug"
+    },
+    {
+      "name": "implementation-debug",
+      "configurePreset": "implementation-debug"
+    },
+    {
+      "name": "desktop-debug",
+      "configurePreset": "desktop-debug"
+    },
+    {
+      "name": "verification",
+      "configurePreset": "verification"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "core-debug",
+      "configurePreset": "core-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "implementation-debug",
+      "configurePreset": "implementation-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "desktop-debug",
+      "configurePreset": "desktop-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "desktop-core",
+      "inherits": "desktop-debug",
+      "filter": {
+        "include": {
+          "label": "^core$"
+        }
+      }
+    },
+    {
+      "name": "desktop-ui",
+      "inherits": "desktop-debug",
+      "filter": {
+        "include": {
+          "label": "^ui$"
+        }
+      }
+    },
+    {
+      "name": "desktop-layout",
+      "inherits": "desktop-debug",
+      "filter": {
+        "include": {
+          "label": "^layout$"
+        }
+      }
+    },
+    {
+      "name": "desktop-delivery",
+      "inherits": "desktop-debug",
+      "filter": {
+        "include": {
+          "label": "^delivery$"
+        }
+      }
+    },
+    {
+      "name": "verification",
+      "configurePreset": "verification",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

@@ -55,6 +55,7 @@ Json eventJson(const WorkerEvent& item) {
         else if constexpr (std::is_same_v<T, StrangerListEvent>) return {{"type", "strangers"}, {"users", value.users}, {"query", value.query}, {"next", value.next}};
         else if constexpr (std::is_same_v<T, UserListEvent>) return {{"type", "users"}, {"users", value.users}};
         else if constexpr (std::is_same_v<T, FriendResultEvent>) return {{"type", "friendResult"}, {"ok", value.ok}, {"username", value.username}, {"error", value.error}, {"state", value.state}};
+        else if constexpr (std::is_same_v<T, GameRelayEvent>) return {{"type","gameRelay"},{"value",value.value}};
         else if constexpr (std::is_same_v<T, SocialEvent>) return {{"type","social"},{"value",value.value}};
         else if constexpr (std::is_same_v<T, UserUidEvent>) return {{"type", "uid"}, {"username", value.username}, {"uid", value.uid}};
         else return {{"type", "error"}, {"code", static_cast<int>(value.code)}, {"message", value.message}};
@@ -78,6 +79,7 @@ Command commandFromJson(const Json& j) {
         request.emailLogin = j.value("emailLogin",false);
         return request;
     }
+    if (name == "gameRelay") { const auto& value=j.at("value");if(!value.is_object()||value.dump().size()>8500)throw std::runtime_error("invalid game packet");return GameRelay{value}; }
     if (name == "social") { const auto& value=j.at("value");if(!value.is_object()||value.dump().size()>420*1024)throw std::runtime_error("invalid social request");return SocialRequest{value}; }
     if (name == "sendText") return SendText{text("peer"), text("text"), 0, {}};
     if (name == "sendFile") return SendFile{text("peer"), codec::path(text("path"))};

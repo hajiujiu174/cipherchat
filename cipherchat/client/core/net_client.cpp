@@ -1,3 +1,6 @@
+#ifndef _WIN32
+#include <netinet/tcp.h>
+#endif
 #include "common/net/socket.hpp"
 #include "client/core/net_client.hpp"
 #include <algorithm>
@@ -58,7 +61,7 @@ void NetClient::startCommon(const std::string& host, std::uint16_t port,
     host_ = host; serverName_ = serverName; verifyPeer_ = verifyPeer; timeoutMs_ = timeoutMs;
     onMessage_ = std::move(message); onClose_ = std::move(close);
     handshakeDone_ = false; closedNotified_ = false; closeReason_ = CloseReason::None;
-    { std::lock_guard lock(outboxMutex_); outbox_.clear(); outboxBytes_ = 0; }
+    { std::lock_guard lock(outboxMutex_); outbox_.clear(); gameOutbox_.clear(); realtimeUntil_=0; outboxBytes_ = 0; }
     running_ = true;
     try { reader_ = std::thread([this] { readLoop(); }); }
     catch (...) { running_ = false; net::closeSocket(socket); socket_ = 0; throw; }
@@ -76,7 +79,7 @@ void NetClient::stop() {
     if (reader_.joinable() && reader_.get_id() == std::this_thread::get_id()) return;
     if (reader_.joinable()) reader_.join();
     sslCtx_.reset();
-    { std::lock_guard lock(outboxMutex_); outbox_.clear(); outboxBytes_ = 0; }
+    { std::lock_guard lock(outboxMutex_); outbox_.clear(); gameOutbox_.clear(); realtimeUntil_=0; outboxBytes_ = 0; }
 }
 void NetClient::notifyClosed() {
     { std::lock_guard lock(handshakeMutex_); }
@@ -87,13 +90,24 @@ bool NetClient::send(const cc::proto::Message& message) {
     if (!running_) return false;
     const auto frame = cc::proto::encodeFrame(cc::proto::serialize(message));
     std::lock_guard lock(outboxMutex_);
-    if (!running_ || outbox_.size() >= net::kOutboxMaxFrames || outboxBytes_ + frame.size() > net::kOutboxMaxBytes) return false;
-    outbox_.push_back(frame); outboxBytes_ += frame.size();
+    const bool game=message.type==cc::proto::MsgType::GameRelay;
+    const auto budget=game?net::kOutboxMaxBytes:net::kOutboxMaxBytes-128*1024;
+    if(!running_||outboxBytes_+frame.size()>budget)return false;
+    if(game){
+        realtimeUntil_=std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count()+3000;
+        const auto data=message.body.value("data",nlohmann::json::object());const auto type=data.value("type",std::string{});
+        std::string key;
+        if(type=="state"||(type=="input"&&data.value("net",0)==2))key=message.body.value("to",std::string{})+"/"+data.value("room",std::string{})+"/"+data.value("run",std::string{})+"/"+type;
+        if(!key.empty())for(auto& old:gameOutbox_)if(old.key==key){outboxBytes_-=old.frame.size();old.frame=frame;outboxBytes_+=frame.size();return true;}
+        if(gameOutbox_.size()>=16)return false;gameOutbox_.push_back({key,frame});
+    }else{if(outbox_.size()>=net::kOutboxMaxFrames)return false;outbox_.push_back(frame);}
+    outboxBytes_+=frame.size();
     return true;
 }
 void NetClient::readLoop() {
     const auto socket = static_cast<net::Socket>(socket_);
     try {
+        int noDelay=1;::setsockopt(socket,IPPROTO_TCP,TCP_NODELAY,reinterpret_cast<const char*>(&noDelay),sizeof(noDelay));
         ssl_ = SSL_new(sslCtx_.get());
         if (!ssl_ || SSL_set_fd(ssl_, static_cast<int>(socket)) != 1) throw std::runtime_error("TLS creation failed");
         if (verifyPeer_) {
@@ -124,8 +138,9 @@ void NetClient::readLoop() {
         while (running_ && handshakeDone_) {
             if (pendingWrite.empty()) {
                 std::lock_guard lock(outboxMutex_);
-                if (!outbox_.empty()) {
-                    pendingWrite = std::move(outbox_.front()); outbox_.pop_front();
+                if(!gameOutbox_.empty()||!outbox_.empty()) {
+                    if(!gameOutbox_.empty()){pendingWrite=std::move(gameOutbox_.front().frame);gameOutbox_.pop_front();}
+                    else {pendingWrite=std::move(outbox_.front());outbox_.pop_front();}
                     // Keep the active frame charged until it has been completely sent.
                     offset = 0; writeStarted = Clock::now();
                 }
@@ -164,7 +179,8 @@ void NetClient::readLoop() {
             }
             const auto error = SSL_get_error(ssl_, count);
             if (error != SSL_ERROR_WANT_READ && error != SSL_ERROR_WANT_WRITE) break;
-            net::waitSocket(socket, true, wantWrite || error == SSL_ERROR_WANT_WRITE, 25);
+            const auto fastNow=std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count();
+            net::waitSocket(socket,true,wantWrite||error==SSL_ERROR_WANT_WRITE,fastNow<realtimeUntil_?3:25);
         }
     } catch (const std::exception&) {
         if (closeReason_ == CloseReason::None) closeReason_ = CloseReason::Disconnected;

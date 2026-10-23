@@ -203,7 +203,7 @@ inline void from_json(const nlohmann::json& j, ClientSnapshot& s) {
     if (j.at("format") == 1) {
         s.outbox.clear(); s.pendingSends.clear(); s.pendingPayloads.clear(); s.receivedMessages.clear();
         for (auto& h : s.history) if(h.from==s.account.username && h.state==DeliveryState::Queued) h.state=DeliveryState::Failed;
-        for (auto& t : s.transfers) { t.fileKey.clear(); t.previousTag.clear(); t.pendingChunks.clear(); t.lastAck.reset(); t.directEndpoint.reset(); if(!t.complete)t.cancelled=true; }
+        for (auto& t : s.transfers) { t.transportVersion=2; t.fileKey.clear(); t.previousTag.clear(); t.pendingChunks.clear(); t.lastAck.reset(); t.directEndpoint.reset(); if(!t.complete)t.cancelled=true; }
     }
     for (const auto& h : s.history) codec::ensure(static_cast<int>(h.state) >= 0 && static_cast<int>(h.state) <= 3);
 }

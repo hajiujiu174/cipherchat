@@ -69,6 +69,9 @@ private:
     void handleRecipientAck(Peer& peer, const cc::proto::Message& msg);
     void deliver(Peer& peer, cc::proto::Message msg);
     bool usesV2(const Peer& peer) const;
+    void handleGameRelay(Peer&, const cc::proto::Message&);
+    std::map<const Peer*, std::int64_t> lastGameRelay_;
+    std::map<const Peer*, bool> gamePeers_;
     void handleTyping(Peer& peer, const cc::proto::Message& msg);
     void handleListUsers(Peer& peer);
     void handleListContacts(Peer& peer);

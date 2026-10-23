@@ -1,18 +1,37 @@
 cmake_minimum_required(VERSION 3.21)
-project(Messager VERSION 0.3.14 LANGUAGES CXX)
+project(Messager VERSION 0.3.25.0 LANGUAGES CXX)
 set_source_files_properties(resources/app.rc PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.ico")
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
-find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets)
+find_package(Qt6 6.5 REQUIRED COMPONENTS Widgets Network)
 add_library(messager_lib
     src/core/types.h
+    src/core/nextalkbrand.h src/core/nextalkbrand.cpp
     src/services/chatservice.h
     src/services/cipherchatmapping.h src/services/cipherchatmapping.cpp
     src/services/mockservice.h src/services/mockservice.cpp
     src/services/loginpreferences.h src/services/loginpreferences.cpp
     src/services/localfiles.h src/services/localfiles.cpp
+    src/services/casualgames.h src/services/casualgames.cpp
+    src/ui/casualgamepage.h src/ui/casualgamepage.cpp
+    src/services/tankengine.h src/services/tankengine.cpp
+    src/services/tankcontroller.h src/services/tankcontroller.cpp
+    src/ui/tankpage.h src/ui/tankpage.cpp
+    src/services/badmintonengine.h src/services/badmintonengine.cpp
+    src/services/badmintoncontroller.h src/services/badmintoncontroller.cpp
+    src/ui/badmintonpage.h src/ui/badmintonpage.cpp
+    src/services/chessrules.h src/services/chessrules.cpp
+    src/services/chesscontroller.h src/services/chesscontroller.cpp
+    src/ui/chesspage.h src/ui/chesspage.cpp
+    third_party/tanktrouble/upstream/game/Maze.cc
+    third_party/tanktrouble/upstream/game/Object.cc
+    third_party/tanktrouble/upstream/game/Tank.cc
+    third_party/tanktrouble/upstream/game/Shell.cc
+    third_party/tanktrouble/upstream/game/Block.cc
+    third_party/tanktrouble/upstream/game/util/Math.cc
+    third_party/tanktrouble/upstream/game/util/Vec.cc
     src/services/gomokuwire.h src/services/gomokucontroller.h src/services/gomokucontroller.cpp
     src/controllers/appcontroller.h src/controllers/appcontroller.cpp
     src/models/conversationmodel.h src/models/conversationmodel.cpp
@@ -46,12 +65,27 @@ endif()
 include(CTest)
 if(BUILD_TESTING)
     find_package(Qt6 REQUIRED COMPONENTS Test)
+    qt_add_executable(messager_casual_tests tests/tst_casual.cpp resources.qrc)
+    target_link_libraries(messager_casual_tests PRIVATE messager_lib Qt6::Test)
+    add_test(NAME messager_casual COMMAND messager_casual_tests -platform offscreen)
     qt_add_executable(messager_tests tests/tst_messager.cpp resources.qrc)
     target_link_libraries(messager_tests PRIVATE messager_lib Qt6::Test)
     add_test(NAME messager_ui COMMAND messager_tests -platform offscreen -o "${CMAKE_BINARY_DIR}/ui-test-results.txt,txt")
     qt_add_executable(messager_miniapps_tests tests/tst_miniapps.cpp resources.qrc)
     target_link_libraries(messager_miniapps_tests PRIVATE messager_lib Qt6::Test)
     add_test(NAME messager_miniapps COMMAND messager_miniapps_tests -platform offscreen)
+    qt_add_executable(messager_tank_tests tests/tst_tank.cpp resources.qrc)
+    target_link_libraries(messager_tank_tests PRIVATE messager_lib Qt6::Test)
+    add_test(NAME messager_tank COMMAND messager_tank_tests -platform offscreen)
+    qt_add_executable(messager_badminton_tests tests/tst_badminton.cpp resources.qrc)
+    target_link_libraries(messager_badminton_tests PRIVATE messager_lib Qt6::Test)
+    add_test(NAME messager_badminton COMMAND messager_badminton_tests -platform offscreen)
+    qt_add_executable(messager_chess_tests tests/tst_chess.cpp resources.qrc)
+    target_link_libraries(messager_chess_tests PRIVATE messager_lib Qt6::Test)
+    add_test(NAME messager_chess COMMAND messager_chess_tests -platform offscreen)
+    qt_add_executable(messager_realtime_tests tests/tst_realtime.cpp resources.qrc)
+    target_link_libraries(messager_realtime_tests PRIVATE messager_lib Qt6::Test)
+    add_test(NAME messager_realtime COMMAND messager_realtime_tests -platform offscreen)
 endif()
 install(TARGETS Messager RUNTIME DESTINATION bin)
 
@@ -71,10 +105,11 @@ if(MESSAGER_WITH_CIPHERCHAT)
     endfunction()
     messager_import_cipherchat()
     add_library(messager_cipherchat src/services/cipherchatgateway.h src/services/cipherchatgateway.cpp
+        src/services/gameudp.h src/services/gameudp.cpp
         src/services/cipherchatservice.h src/services/cipherchatservice.cpp)
     set_target_properties(messager_cipherchat PROPERTIES CXX_STANDARD 20)
     target_include_directories(messager_cipherchat PUBLIC src)
-    target_link_libraries(messager_cipherchat PRIVATE ccfw_rhine_json messager_lib PUBLIC Qt6::Core)
+    target_link_libraries(messager_cipherchat PRIVATE ccfw_rhine_json messager_lib PUBLIC Qt6::Core Qt6::Network)
     target_link_libraries(Messager PRIVATE messager_cipherchat)
     target_compile_definitions(Messager PRIVATE MESSAGER_HAS_CIPHERCHAT=1)
     target_sources(Messager PRIVATE "${CIPHERCHAT_SOURCE_DIR}/framework/gui/update_controller.cpp"
@@ -82,15 +117,22 @@ if(MESSAGER_WITH_CIPHERCHAT)
     target_include_directories(Messager PRIVATE "${CIPHERCHAT_SOURCE_DIR}/framework")
     target_link_libraries(Messager PRIVATE ccfw_updates)
     if(WIN32)
-        add_executable(messager-update-launcher WIN32 "${CIPHERCHAT_SOURCE_DIR}/framework/update/launcher.cpp")
+        add_executable(messager-update-launcher WIN32 tools/brand-migration/launcher.cpp)
+        target_include_directories(messager-update-launcher PRIVATE "${CIPHERCHAT_SOURCE_DIR}/framework/update")
         target_compile_definitions(messager-update-launcher PRIVATE CCFW_MESSAGER_LAUNCHER=1)
         target_link_libraries(messager-update-launcher PRIVATE shell32)
         target_sources(messager-update-launcher PRIVATE resources/app.rc)
         target_sources(cipherchat-updater PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.rc")
         set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/resources/app.rc" TARGET_DIRECTORY cipherchat-updater PROPERTIES OBJECT_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/resources/app.ico")
         set_target_properties(messager-update-launcher PROPERTIES CXX_STANDARD 20)
+        add_executable(NEXTALK-branding WIN32 tools/brand-migration/main.cpp resources/app.rc)
+        target_include_directories(NEXTALK-branding PRIVATE "${CIPHERCHAT_SOURCE_DIR}/third_party")
+        target_link_libraries(NEXTALK-branding PRIVATE shell32 ole32 uuid advapi32)
+        set_target_properties(NEXTALK-branding PROPERTIES CXX_STANDARD 20)
+        target_compile_definitions(cipherchat-updater PRIVATE CCFW_BRAND_NEXTALK=1)
         if(MINGW)
             target_link_options(messager-update-launcher PRIVATE -municode -static -static-libgcc -static-libstdc++)
+            target_link_options(NEXTALK-branding PRIVATE -municode -static -static-libgcc -static-libstdc++)
         endif()
     endif()
     if(BUILD_TESTING)
@@ -105,10 +147,16 @@ if(MESSAGER_WITH_CIPHERCHAT)
         set_target_properties(messager_test_server PROPERTIES CXX_STANDARD 20)
         target_link_libraries(messager_test_server PUBLIC ccfw_server ccfw_transport)
         qt_add_executable(messager_live_tests tests/tst_live.cpp resources.qrc)
+        target_compile_definitions(messager_live_tests PRIVATE GAME_UDP_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/tools/game_udp_relay.py")
         set_target_properties(messager_live_tests PROPERTIES CXX_STANDARD 20)
         target_link_libraries(messager_live_tests PRIVATE messager_cipherchat messager_lib messager_test_server Qt6::Test)
         add_test(NAME messager_live COMMAND messager_live_tests -platform offscreen -o "${CMAKE_BINARY_DIR}/live-test-results.txt,txt")
         set_tests_properties(messager_live PROPERTIES TIMEOUT 150)
+        qt_add_executable(messager_udp_tests tests/tst_udp.cpp src/services/gameudp.h src/services/gameudp.cpp)
+        target_include_directories(messager_udp_tests PRIVATE src)
+        target_link_libraries(messager_udp_tests PRIVATE Qt6::Core Qt6::Network Qt6::Test)
+        target_compile_definitions(messager_udp_tests PRIVATE GAME_UDP_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/tools/game_udp_relay.py")
+        add_test(NAME messager_udp COMMAND messager_udp_tests)
         qt_add_executable(messager_update_tests tests/tst_updates.cpp resources.qrc
             "${CIPHERCHAT_SOURCE_DIR}/framework/gui/update_controller.cpp"
             "${CIPHERCHAT_SOURCE_DIR}/framework/gui/update_controller.hpp")

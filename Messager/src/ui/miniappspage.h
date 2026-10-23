@@ -13,6 +13,10 @@ namespace Messager {
 class ChatService;
 class ScientificCalculator;
 class GomokuPage;
+class TankPage;
+class BadmintonPage;
+class ChessPage;
+class CasualGamePage;
 struct Message;
 class MiniAppsPage final : public QWidget {
     Q_OBJECT
@@ -34,15 +38,20 @@ class MiniAppsPage final : public QWidget {
     QString m_scope;
     QStringList m_favorites, m_recent;
     QStackedWidget* m_stack;
-    QLineEdit *m_search, *m_todoInput, *m_expression, *m_webAddress;
+    QLineEdit *m_search, *m_todoInput, *m_expression;
     QPlainTextEdit* m_note;
     QListWidget* m_todos;
-    QLabel *m_status, *m_recentLabel, *m_empty, *m_count, *m_webStatus;
+    QLabel *m_status, *m_recentLabel, *m_empty, *m_count;
     QTimer* m_saveTimer;
-    QHash<QString, QWidget*> m_cards;
+    QHash<QString, QWidget*> m_cards, m_pages;
     QHash<QString, QPushButton*> m_stars;
     QComboBox* m_filter;
     ScientificCalculator* m_calculator;
     GomokuPage* m_gomoku;
+    TankPage* m_tank;
+    BadmintonPage* m_badminton;
+    QHash<QString, GomokuPage*> m_gamePages;
+    QHash<QString, ChessPage*> m_chessPages;
+    QHash<QString,CasualGamePage*> m_casualPages;
 };
 } // namespace Messager

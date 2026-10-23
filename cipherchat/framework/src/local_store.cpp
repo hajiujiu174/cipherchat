@@ -2,6 +2,7 @@
 #include "snapshot_codec.hpp"
 #include "feature_codec.hpp"
 #include "sqlite_helpers.hpp"
+#include <set>
 namespace ccfw {
 namespace {
 Error storageError(ErrorCode code = ErrorCode::StorageFailure) {
@@ -23,6 +24,34 @@ CREATE TABLE client_state (
  format_version INTEGER NOT NULL CHECK(format_version=1), protected_snapshot BLOB NOT NULL);
 PRAGMA user_version=1;
 )";
+// The first ordinary-chat release cleared old acknowledgement packets but kept
+// completed encrypted transfers active. Recover ONLY their IDs from the original
+// read-only archive; never restore archived keys or modify server receipts.
+std::set<std::string> legacyFileIds(const std::filesystem::path& path, ISecretProtector& protector, const AccountScope& scope) {
+    auto archive=path;archive+=".before-ordinary.bak";
+    if(!std::filesystem::is_regular_file(archive))return {};
+    sqlite3* raw=nullptr;
+    if(sqlite3_open_v2(codec::pathText(archive).c_str(),&raw,SQLITE_OPEN_READONLY,nullptr)!=SQLITE_OK) {if(raw)sqlite3_close(raw);return {};}
+    std::unique_ptr<sqlite3,decltype(&sqlite3_close)> db(raw,&sqlite3_close);
+    try {
+        sql::Statement row(raw,"SELECT protected_snapshot FROM client_state WHERE singleton=1");
+        if(!row.step())return {};
+        auto clear=unpack(protector,row.bytes(0));if(!clear)return {};
+        const auto json=nlohmann::json::from_cbor(clear.value());
+        if(json.value("format",0)!=1 || !sameScope(json.at("account").get<AccountScope>(),scope))return {};
+        std::set<std::string> ids;
+        for(const auto& transfer:json.at("transfers")) {
+            const auto id=transfer.at("id").get<std::string>();
+            if(!id.empty() && id.size()<=32)ids.insert(id);
+        }
+        return ids;
+    } catch(const std::exception&) {return {};}
+}
+bool legacyFilePacket(const std::set<std::string>& ids, const std::string& kind, const std::string& id) {
+    if(kind!="file_meta" && kind!="file_ack" && kind!="file_chunk")return false;
+    for(const auto& file:ids)if(id=="fmeta:"+file || id.starts_with("fack:"+file+":") || id.starts_with("fchunk:"+file+":"))return true;
+    return false;
+}
 }
 struct SqliteLocalStore::Impl {
     sql::Database database;
@@ -75,6 +104,27 @@ Result<> SqliteLocalStore::open(const std::filesystem::path& path, const Account
             if(copied!=SQLITE_DONE)return Result<>::failure(storageError());
             auto clean=validated.value(); const auto revision=clean.revision++;
             auto migrated=commit(revision,clean); if(!migrated)return migrated;
+        }
+        const auto retired=legacyFileIds(path,protector_,scope);
+        if(!retired.empty()) {
+            auto current=load();if(!current)return Result<>::failure(current.error());
+            auto clean=current.value();bool changed=false;
+            for(auto& t:clean.transfers)if(retired.contains(t.fileId) && t.transportVersion==3) {
+                t.transportVersion=2;t.fileKey.clear();t.previousTag.clear();t.pendingChunks.clear();t.lastAck.reset();t.directEndpoint.reset();if(!t.complete)t.cancelled=true;changed=true;
+            }
+            changed|=std::erase_if(clean.outbox,[&](const auto& p){return legacyFilePacket(retired,p.kind,p.messageId);})>0;
+            changed|=std::erase_if(clean.pendingSends,[&](const auto& p){return legacyFilePacket(retired,p.kind,p.messageId);})>0;
+            changed|=std::erase_if(clean.pendingPayloads,[&](const auto& p){return legacyFilePacket(retired,p.kind,p.messageId);})>0;
+            if(changed) {
+                auto backupPath=path;backupPath+=".before-legacy-files.bak";
+                for(unsigned suffix=1;std::filesystem::exists(backupPath);++suffix) {backupPath=path;backupPath+=".before-legacy-files-"+std::to_string(suffix)+".bak";}
+                sqlite3* backupDb=nullptr;
+                if(sqlite3_open(codec::pathText(backupPath).c_str(),&backupDb)!=SQLITE_OK) {if(backupDb)sqlite3_close(backupDb);return Result<>::failure(storageError());}
+                auto backup=sqlite3_backup_init(backupDb,"main",database,"main");const auto copied=backup?sqlite3_backup_step(backup,-1):SQLITE_ERROR;
+                if(backup)sqlite3_backup_finish(backup);sqlite3_close(backupDb);
+                if(copied!=SQLITE_DONE)return Result<>::failure(storageError());
+                const auto revision=clean.revision++;auto saved=commit(revision,clean);if(!saved)return saved;
+            }
         }
         return Result<>::success({});
     } catch (const std::exception&) { return Result<>::failure(storageError()); }

@@ -10,6 +10,13 @@ Result<> ClientApplication::listContacts() {
     if (account_.phase() != AccountPhase::Online) return Result<>::failure({ErrorCode::NotConnected, "M9-02", "请先登录"});
     return net_.send(cc::proto::withV2(cc::proto::makeListContacts()));
 }
+Result<> ClientApplication::gameRelay(nlohmann::json request) {
+    if(account_.phase()!=AccountPhase::Online || !gameRelaySupported_)
+        return Result<>::failure({ErrorCode::NotImplemented,"tank","当前服务器尚未启用实时游戏"});
+    if(!request.is_object() || request.dump().size()>8500)
+        return Result<>::failure({ErrorCode::InvalidArgument,"tank","游戏数据格式有误"});
+    return net_.send(cc::proto::withV2({cc::proto::MsgType::GameRelay,"",std::move(request)}));
+}
 Result<> ClientApplication::social(nlohmann::json request) {
     if(account_.phase()!=AccountPhase::Online)return Result<>::failure({ErrorCode::NotConnected,"M10-34","请先登录"});
     if(!socialSupported_)return Result<>::failure({ErrorCode::NotImplemented,"M10-34","当前服务器暂不支持个人资料和朋友圈"});
@@ -43,6 +50,7 @@ Result<> ClientApplication::connect(const ConnectionOptions& options) {
     shutdown();
     files_.setCacheSupported(false);
     socialSupported_=false;
+    gameRelaySupported_=false;
     auto connected = net_.connect(options);
     if (!connected) { events_.publish(connected.error()); return connected; }
     events_.publish(ConnectionSecurity{true, options.host + ":" + std::to_string(options.port) + "/" + options.expectedServerName});
@@ -75,6 +83,10 @@ Result<> ClientApplication::tick() {
         try {
             const bool accountMessage = message.type == MsgType::HelloResult || message.type == MsgType::LoginChallenge ||
                 message.type == MsgType::LoginResult || message.type == MsgType::RegisterResult || message.type == MsgType::UploadPrekeysResult || message.type == MsgType::RegistrationCodeResult || message.type == MsgType::PasswordResetResult;
+            if(message.type==MsgType::HelloResult) {
+                gameRelaySupported_=message.body.value("ok",false)&&message.body.value("game_relay",false);
+                events_.publish(GameRelayEvent{{{"supported",gameRelaySupported_}}});
+            }
             if (accountMessage || (message.type == MsgType::Error && before != AccountPhase::Online)) {
                 auto handled = account_.handle(message); if (!handled) publishError(handled.error());
                 if (message.type == MsgType::HelloResult) files_.setCacheSupported(message.body.value("ok",false) && message.body.value("file_cache",false));
@@ -82,6 +94,7 @@ Result<> ClientApplication::tick() {
             } else {
                 wire::require(isV2(message) && before == AccountPhase::Online);
                 switch (message.type) {
+                case MsgType::GameRelay: events_.publish(GameRelayEvent{message.body});break;
                 case MsgType::SocialResult: events_.publish(SocialEvent{message.body});break;
                 case MsgType::FileCacheResult: {
                     auto result=files_.receiveCacheResult(message);if(!result)publishError(result.error());break;

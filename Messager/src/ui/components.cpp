@@ -29,7 +29,15 @@ QIcon glyph(const QString& name, const QColor& color, int size) {
     p.setPen(QPen(color, 1.7, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     p.setBrush(Qt::NoBrush);
     QPainterPath path;
-    if (name == "chat") {
+    if (name == "pin") {
+        p.translate(12, 12);
+        p.rotate(35);
+        path.moveTo(-4, -8); path.lineTo(4, -8); path.lineTo(3, -5);
+        path.lineTo(3, 0); path.lineTo(6, 3); path.lineTo(-6, 3);
+        path.lineTo(-3, 0); path.lineTo(-3, -5); path.closeSubpath();
+        p.drawPath(path);
+        p.drawLine(QPointF(0, 3), QPointF(0, 10));
+    } else if (name == "chat") {
         path.moveTo(6, 4);
         path.lineTo(18, 4);
         path.quadTo(21, 4, 21, 7);
@@ -261,13 +269,15 @@ void ConversationDelegate::paint(QPainter* p, const QStyleOptionViewItem& o, con
     p->drawText(QRect(right - 50, r.top() + 20, 50, 20), Qt::AlignRight,
                 i.data(ConversationModel::Time).toString());
     int unread = i.data(ConversationModel::Unread).toInt();
+    const bool pinned = i.data(ConversationModel::Pinned).toBool();
+    const int trailing = (unread ? 29 : 0) + (pinned ? 22 : 0);
     f.setPixelSize(12);
     p->setFont(f);
-    p->drawText(QRect(left, r.top() + 45, qMax(10, right - left - (unread ? 29 : 0)), 21), Qt::AlignVCenter,
+    p->drawText(QRect(left, r.top() + 45, qMax(10, right - left - trailing), 21), Qt::AlignVCenter,
                 p->fontMetrics().elidedText(i.data(ConversationModel::Preview).toString(), Qt::ElideRight,
-                                            qMax(10, right - left - (unread ? 29 : 0))));
+                                            qMax(10, right - left - trailing)));
     if (unread) {
-        QRect badge(right - 21, r.top() + 45, 21, 21);
+        QRect badge(right - 21 - (pinned ? 22 : 0), r.top() + 45, 21, 21);
         p->setBrush(c.accent);
         p->setPen(Qt::NoPen);
         p->drawEllipse(badge);
@@ -277,6 +287,7 @@ void ConversationDelegate::paint(QPainter* p, const QStyleOptionViewItem& o, con
         p->setFont(f);
         p->drawText(badge, Qt::AlignCenter, QString::number(unread));
     }
+    if (pinned) glyph("pin", c.accent, 16).paint(p, QRect(right - 16, r.top() + 48, 16, 16));
     p->restore();
 }
 MessageEditor::MessageEditor(QWidget* p) : QPlainTextEdit(p) {
@@ -338,7 +349,7 @@ MessageBubble::MessageBubble(const Message& m, int availableWidth, QWidget* p)
         connect(open, &QPushButton::clicked, this, &MessageBubble::openFileRequested);
         v->addLayout(h);
     } else if(gameInvite) {
-        auto* title=label("五子棋 · 双人对弈",16,nullptr,true);title->setProperty("bubbleOutgoing",m.outgoing);v->addWidget(title);
+        auto* title=label(GomokuWire::title(GomokuWire::gameId(invitation))+(GomokuWire::gameId(invitation)=="tanktrouble"?" · 双人对战":" · 双人对弈"),16,nullptr,true);title->setProperty("bubbleOutgoing",m.outgoing);v->addWidget(title);
         auto* text=label(invitation["black"].toString()+" 邀请 "+invitation["white"].toString()+" 加入房间",13);text->setTextFormat(Qt::PlainText);text->setProperty("bubbleOutgoing",m.outgoing);text->setWordWrap(true);v->addWidget(text);
         auto recolor=[title,text,outgoing=m.outgoing]{for(auto* item:QVector<QLabel*>{title,text}){auto palette=item->palette();palette.setColor(QPalette::WindowText,outgoing&&!Theme::instance().pencil()?Theme::instance().colors().onAccent:Theme::instance().colors().text);item->setPalette(palette);}};
         recolor();connect(&Theme::instance(),&Theme::changed,this,recolor);

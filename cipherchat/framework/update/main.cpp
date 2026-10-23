@@ -4,6 +4,11 @@
 #include <tlhelp32.h>
 #include <iostream>
 #include <mutex>
+#ifdef CCFW_BRAND_NEXTALK
+#define UPDATE_BRAND L"NEXTALK"
+#else
+#define UPDATE_BRAND L"CipherChat"
+#endif
 namespace fs = std::filesystem;
 using namespace ccfw::updates;
 namespace {
@@ -29,7 +34,7 @@ void waitForClient(DWORD pid) {
 }
 int fastUpdate() {
     CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
-    BROWSEINFOW browse{}; browse.lpszTitle = L"选择原 CipherChat 文件夹（包含 cipherchat-launcher.exe）"; browse.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    BROWSEINFOW browse{}; browse.lpszTitle = L"选择 " UPDATE_BRAND L" 安装文件夹（包含 cipherchat-launcher.exe）"; browse.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
     const auto selected = SHBrowseForFolderW(&browse); if (!selected) { CoUninitialize(); return 0; }
     wchar_t path[MAX_PATH]; const auto resolved = SHGetPathFromIDListW(selected,path); CoTaskMemFree(selected); CoUninitialize();
     if (!resolved) throw std::runtime_error("无法读取所选文件夹");
@@ -38,10 +43,10 @@ int fastUpdate() {
     Lock lock(root); RemoteOptions options; options.status = emit; const auto fetch = remoteFetcher(current,options);
     const auto latest = check(current,fetch);
     if (latest.at("sequence") == readJson(current/"release.json").at("sequence")) {
-        MessageBoxW(nullptr,L"当前已经是最新版本。",L"CipherChat 快速更新",MB_OK); return 0;
+        MessageBoxW(nullptr,L"当前已经是最新版本。",UPDATE_BRAND L" 快速更新",MB_OK); return 0;
     }
     const auto staged = stage(current,fetch,emit,{downloadConnections}); emit(staged);
-    if (MessageBoxW(nullptr,L"下载和解压已完成。\n\n请完全退出原 CipherChat（托盘菜单中选择退出），再点击“确定”完成更新。\n点击“取消”会保留下载，下次可以继续。",L"CipherChat 快速更新",MB_OKCANCEL) != IDOK) return 0;
+    if (MessageBoxW(nullptr,L"下载和解压已完成。\n\n请完全退出软件（如在托盘运行，请先选择退出），再点击“确定”完成更新。\n点击“取消”会保留下载，下次可以继续。",UPDATE_BRAND L" 快速更新",MB_OKCANCEL) != IDOK) return 0;
     const auto snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);
     if (snapshot == INVALID_HANDLE_VALUE) throw std::runtime_error("无法检查正在运行的客户端");
     std::vector<DWORD> clients; PROCESSENTRY32W entry{}; entry.dwSize = sizeof(entry);
@@ -96,10 +101,10 @@ int wmain(int argc, wchar_t** argv) {
         writeAtomic(root / ".updates" / "last-result.json", result.dump()); emit(result); return 0;
     } catch (const std::exception& e) {
         Json result{{"event","error"},{"message",e.what()},{"switched",switched}}; emit(result);
-        if (argc == 1) MessageBoxW(nullptr,L"本次更新未完成，下载内容已保留。请检查所选文件夹或网络后重试。",L"CipherChat 快速更新",MB_OK | MB_ICONERROR);
+        if (argc == 1) MessageBoxW(nullptr,L"本次更新未完成，下载内容已保留。请检查所选文件夹或网络后重试。",UPDATE_BRAND L" 快速更新",MB_OK | MB_ICONERROR);
         if (switching && !root.empty()) {
             try { writeAtomic(root / ".updates" / "last-result.json",result.dump()); } catch (...) {}
-            MessageBoxW(nullptr, switched ? L"版本已切换，但自动启动失败。请通过启动入口重试，或运行“回退更新.cmd”。" : L"更新未完成，原版本仍可使用。请通过启动入口重试，详情见软件更新窗口。", L"CipherChat 更新", MB_OK | MB_ICONERROR);
+            MessageBoxW(nullptr, switched ? L"版本已切换，但自动启动失败。请通过启动入口重试，或运行“回退更新.cmd”。" : L"更新未完成，原版本仍可使用。请通过启动入口重试，详情见软件更新窗口。", UPDATE_BRAND L" 更新", MB_OK | MB_ICONERROR);
         }
         return 1;
     }

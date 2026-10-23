@@ -36,6 +36,9 @@ CipherChatService::CipherChatService(QJsonObject config, QObject* parent)
     m_config.remove("password");
     connect(&m_gateway, &CipherChatGateway::eventReceived, this, &CipherChatService::handle);
     connect(&m_gateway, &CipherChatGateway::commandRejected, this, &CipherChatService::error);
+    connect(&m_udp,&GameUdp::packet,this,[this](const QString& peer,const QJsonObject& data){
+        if(online()&&isFriend(peer))emit gamePacket(peer,data);
+    });
     auto* profileTimer = new QTimer(this);
     profileTimer->setInterval(1000);
     connect(profileTimer, &QTimer::timeout, this, &CipherChatService::refreshProfileSummaries);
@@ -43,6 +46,7 @@ CipherChatService::CipherChatService(QJsonObject config, QObject* parent)
 }
 CipherChatService::~CipherChatService() = default;
 void CipherChatService::resetView() {
+    m_udp.stop();
     m_conversations.clear();
     m_messages.clear();
     m_transfers.clear();
@@ -115,7 +119,7 @@ void CipherChatService::disconnectAccount() {
 bool CipherChatService::requireOnline() {
     if (m_online)
         return true;
-    error("请先登录 CipherChat 后再操作");
+    error("请先登录 NEXTALK 后再操作");
     return false;
 }
 void CipherChatService::ensurePeer(const QString& peer) {
@@ -213,6 +217,17 @@ QString CipherChatService::send(const QString& id, const QString& text, bool) {
         m_records[rid] = {{"from", m_user},   {"to", c.peer}, {"text", text},
                           {"messageId", rid}, {"groupId", 0}, {"timestamp", m.timestamp},
                           {"state", 0}};
+    const bool gameControl=GomokuWire::isControl(text);
+    const auto gameEnvelope=GomokuWire::decode(text);
+    if(!gameControl)for (auto& entry : m_conversations)
+        if (entry.id == id) {
+            entry.lastActivity = m.timestamp;
+            entry.preview = gameEnvelope["type"]=="invite"
+                ? GomokuWire::title(GomokuWire::gameId(gameEnvelope))+"邀请 · 点击加入房间"
+                : "我：" + text.simplified();
+            entry.time = m.time;
+        }
+    if(!gameControl)emit conversationsChanged();
     emit messagesChanged(id);
     return rid;
 }
@@ -355,6 +370,10 @@ void CipherChatService::applyGroup(const QJsonObject& o) {
     c.subtitle = QString::number(c.members.size()) + " 位成员";
     for (auto& old : m_conversations)
         if (old.id == id) {
+            c.preview = old.preview;
+            c.time = old.time;
+            c.lastActivity = old.lastActivity;
+            c.unread = old.unread;
             old = c;
             return;
         }
@@ -404,9 +423,12 @@ void CipherChatService::applyRecord(const QJsonObject& o, bool restored) {
     const bool gameControl=GomokuWire::isControl(m.text);
     if(!gameControl)for (auto& c : m_conversations)
         if (c.id == m.conversation) {
-            c.preview = (m.outgoing ? "我：" : m.sender + "：") + m.text.simplified();
-            if(GomokuWire::decode(m.text)["type"]=="invite")c.preview="五子棋邀请 · 点击加入房间";
-            c.time = m.time;
+            if (m.timestamp >= c.lastActivity) {
+                c.lastActivity = m.timestamp;
+                c.preview = (m.outgoing ? "我：" : m.sender + "：") + m.text.simplified();
+                if(GomokuWire::decode(m.text)["type"]=="invite")c.preview=GomokuWire::title(GomokuWire::gameId(GomokuWire::decode(m.text)))+"邀请 · 点击加入房间";
+                c.time = m.time;
+            }
             if (!exists && !restored && !m.outgoing && m_viewing != c.id)
                 ++c.unread;
         }
@@ -455,6 +477,12 @@ void CipherChatService::applyFile(const QJsonObject& o, bool restored) {
         }
     if (!had)
         m_messages << m;
+    for (auto& c : m_conversations)
+        if (c.id == m.conversation && m.timestamp >= c.lastActivity) {
+            c.lastActivity = m.timestamp;
+            c.preview = (m.outgoing ? QStringLiteral("我：") : m.sender + "：") + "[文件] " + m.text;
+            c.time = m.time;
+        }
     if (!exists && !restored)
         activity("文件传输", t.name, t.conversation);
     emit conversationsChanged();
@@ -505,8 +533,28 @@ void CipherChatService::publishMoment(const QString& text,const QString& key) {
     if(!requireOnline())return;
     m_gateway.post({{"command","social"},{"value",QJsonObject{{"op","publish"},{"text",text},{"request_id",key}}}});
 }
+bool CipherChatService::sendGamePacket(const QString& peer,const QJsonObject& packet) {
+    if(!gameRelaySupported() || !isFriend(peer))return false;
+    auto data=packet;
+    const bool actionGame=data["game"]=="tanktrouble"||data["game"]=="badminton";
+    if(actionGame){
+        data["udp"]=m_udp.capable()?1:0;
+        if(data["net"].toInt()==2&&(data["type"]=="input"||data["type"]=="state")&&m_udp.send(peer,data))return true;
+    }
+    return m_gateway.post({{"command","gameRelay"},{"value",QJsonObject{{"to",peer},{"data",data}}}});
+}
 void CipherChatService::handle(const QJsonObject& event) {
     const QString type = event["type"].toString();
+    if(type=="gameRelay") {
+        const auto value=event["value"].toObject();
+        if(value.contains("supported")) { m_gameRelay=value["supported"].toBool();emit gameRelayChanged(); }
+        else if(online() && isFriend(value["from"].toString())) {
+            const auto peer=value["from"].toString();const auto data=value["data"].toObject();
+            if(data["game"]=="tanktrouble"||data["game"]=="badminton")m_udp.advertise(peer,data["udp"].toInt()==1);
+            emit gamePacket(peer,data);
+        }
+        return;
+    }
     if(type=="social") {
         auto value=event["value"].toObject();const auto op=value["op"].toString(),user=value["username"].toString();
         const bool ok=value["ok"].toBool();
@@ -576,6 +624,11 @@ void CipherChatService::handle(const QJsonObject& event) {
     if (type == "account") {
         const int phase = event["phase"].toInt();
         m_online = phase == 6;
+        if(m_online){
+            const auto host=m_config["gameUdpHost"].toString(m_config["host"].toString());
+            const int port=m_config["gameUdpPort"].toInt(host=="8.160.172.25"?55221:0);
+            if(port>0&&port<=65535)m_udp.start(host,quint16(port),m_user);
+        } else m_udp.stop();
         if (!m_online && !m_pendingFriendRequests.isEmpty()) {
             m_pendingFriendRequests.clear();
             emit contactsChanged();

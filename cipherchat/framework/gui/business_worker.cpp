@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <type_traits>
 #include <set>
+#include <chrono>
 
 namespace ccfw::gui {
 namespace {
@@ -73,8 +74,24 @@ bool BusinessWorker::post(Command command, std::string requestId) {
     const bool tracked = std::holds_alternative<SendText>(command) || std::holds_alternative<SendGroup>(command) || std::holds_alternative<SendFile>(command) || std::holds_alternative<SetWorkspace>(command);
     if (!requestId.empty() && !tracked) { wipeCommand(command); return false; }
     std::lock_guard lock(mutex_);
-    if (stopping_ || commands_.size() >= 64) { wipeCommand(command); return false; }
-    commands_.push_back({std::move(command), std::move(requestId)}); wake_.notify_one(); return true;
+    if (stopping_) { wipeCommand(command); return false; }
+    if (auto* relay=std::get_if<GameRelay>(&command)) {
+        if(!relay->value.is_object()||!relay->value.contains("data")||!relay->value["data"].is_object())return false;
+        realtimeUntil_=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count()+3000;
+        const auto data=relay->value.value("data",nlohmann::json::object());
+        const auto type=data.value("type",std::string{});
+        const bool latest=type=="state"||(type=="input"&&data.value("net",0)==2);
+        if(latest)for(auto& queued:realtimeCommands_)if(auto* old=std::get_if<GameRelay>(&queued.command)) {
+            const auto d=old->value.value("data",nlohmann::json::object());
+            if(old->value.value("to",std::string{})==relay->value.value("to",std::string{})&&d.value("type",std::string{})==type&&d.value("room",std::string{})==data.value("room",std::string{})&&d.value("run",std::string{})==data.value("run",std::string{})) {queued.command=std::move(command);wake_.notify_one();return true;}
+        }
+        if(realtimeCommands_.size()>=16)return false;
+        realtimeCommands_.push_back({std::move(command),{}});
+    }else {
+        if(commands_.size()>=64){wipeCommand(command);return false;}
+        commands_.push_back({std::move(command),std::move(requestId)});
+    }
+    wake_.notify_one();return true;
 }
 std::vector<WorkerEvent> BusinessWorker::drain() {
     std::lock_guard lock(mutex_); auto result = std::move(events_); events_.clear(); return result;
@@ -114,12 +131,17 @@ void BusinessWorker::run() {
     auto clearPending = [&] { if (pending) { wipe(pending->password); wipe(pending->emailCode); } pending.reset(); stage = Stage::None; };
     auto result = [&](const Result<>& value) { if (!value) publish(value.error()); };
     auto restoreView = [&] { auto restored = services->view(); if (restored) { publishView(std::move(restored.value())); return true; } publish(restored.error()); return false; };
+    int realtimeBurst=0;
     while (!stopping_) {
         std::optional<QueuedCommand> queued;
         std::optional<Command> command;
         std::string requestId;
-        { std::unique_lock lock(mutex_); wake_.wait_for(lock, std::chrono::milliseconds(10), [&] { return stopping_ || !commands_.empty(); });
-          if (!commands_.empty()) { queued = std::move(commands_.front()); commands_.pop_front(); command = std::move(queued->command); requestId = std::move(queued->requestId); } }
+        { std::unique_lock lock(mutex_);
+          const auto now=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+          wake_.wait_for(lock,std::chrono::milliseconds(now<realtimeUntil_?2:10),[&]{return stopping_||!commands_.empty()||!realtimeCommands_.empty();});
+          if(!realtimeCommands_.empty()&&(realtimeBurst<8||commands_.empty())) {queued=std::move(realtimeCommands_.front());realtimeCommands_.pop_front();++realtimeBurst;}
+          else if(!commands_.empty()) {queued=std::move(commands_.front());commands_.pop_front();realtimeBurst=0;}
+          if(queued){command=std::move(queued->command);requestId=std::move(queued->requestId);} }
         if (stopping_) { if (command) wipeCommand(*command); break; }
         try {
             if (command) {
@@ -149,6 +171,7 @@ void BusinessWorker::run() {
                         else if constexpr (std::is_same_v<T, RetryGroup>) { auto sent = services->groups.retry(request.logicalId); if (sent) publish(sent.value()); else publish(sent.error()); }
                         else if constexpr (std::is_same_v<T, TypeTo>) result(services->groups.sendTyping(request.peer));
                         else if constexpr (std::is_same_v<T, SearchUsers>) result(services->app.searchUsers(request.query, request.after));
+                        else if constexpr (std::is_same_v<T, GameRelay>) result(services->app.gameRelay(request.value));
                         else if constexpr (std::is_same_v<T, SocialRequest>) result(services->app.social(request.value));
                         else if constexpr (std::is_same_v<T, LookupUid>) result(services->app.lookupUid(request.username));
                         else if constexpr (std::is_same_v<T, AddFriend>) result(services->app.addFriend(request.username));

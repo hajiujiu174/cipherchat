@@ -11,12 +11,12 @@ const char* kTypeNames[] = {
     "list_users",     "user_list",            "create_group",  "group_result",
     "group_update",   "error", "hello", "hello_result", "recipient_ack", "update_get", "update_result",
     "list_contacts", "contact_list", "search_users", "search_result", "add_friend", "friend_result", "respond_friend", "lookup_uid", "uid_result",
-    "file_cache", "file_cache_result", "registration_code", "registration_code_result", "password_reset", "password_reset_result", "social_request", "social_result", "email_login",
+    "file_cache", "file_cache_result", "registration_code", "registration_code_result", "password_reset", "password_reset_result", "social_request", "social_result", "email_login", "game_relay",
 };
 
 // 索引与 MsgType 枚举值一一对应
 static_assert(sizeof(kTypeNames) / sizeof(kTypeNames[0]) ==
-              static_cast<std::size_t>(MsgType::EmailLogin) + 1);
+              static_cast<std::size_t>(MsgType::GameRelay) + 1);
 
 }  // namespace
 
@@ -45,7 +45,7 @@ bool isV2(const Message& message) {
     return it != message.body.end() && it->is_number_integer() && *it == 2;
 }
 Message withV2(Message message) { message.body["version"] = 2; return message; }
-Message makeHello() { return {MsgType::Hello, "", {{"version", 2}}}; }
+Message makeHello() { return {MsgType::Hello, "", {{"version", 2},{"game_relay",true}}}; }
 Message makeHelloResult(bool ok) { return {MsgType::HelloResult, "", {{"version", 2}, {"ok", ok}}}; }
 Message makeLookupUid(std::string_view username) { return {MsgType::LookupUid, "", {{"username", username}}}; }
 Message makeUidResult(std::string_view username, std::int64_t uid) { return {MsgType::UidResult, "", {{"username", username}, {"uid", uid}}}; }

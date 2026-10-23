@@ -31,13 +31,13 @@ void MainWindow::showLogin() {
         return;
     }
     QDialog dialog(this);
-    dialog.setWindowTitle("Messager · 账号原型");
+    dialog.setWindowTitle("NEXTALK · 账号原型");
     dialog.setMinimumWidth(440);
     auto* v = new QVBoxLayout(&dialog);
     v->setContentsMargins(36, 30, 36, 28);
     v->setSpacing(18);
     v->addWidget(new Avatar("M", QColor("#6954d6"), 58), 0, Qt::AlignHCenter);
-    auto* title = label("欢迎来到 Messager", 24, nullptr, true);
+    auto* title = label("欢迎来到 NEXTALK", 24, nullptr, true);
     title->setAlignment(Qt::AlignCenter);
     v->addWidget(title);
     auto* hint = label("登录 / 注册界面预览 · 不会连接服务器", 12, "muted");

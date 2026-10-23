@@ -16,6 +16,7 @@ struct Conversation {
     QString peer;
     qint64 groupId = 0;
     QStringList members;
+    qint64 lastActivity = 0;
 };
 struct Message {
     QString id, conversation, sender, text, time;

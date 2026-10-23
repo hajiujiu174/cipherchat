@@ -258,7 +258,7 @@ void MainWindow::showCreateGroup() {
     auto* dialog = new QDialog(this);
     dialog->setAttribute(Qt::WA_DeleteOnClose);
     dialog->setObjectName("createGroupDialog");
-    dialog->setWindowTitle("创建 CipherChat 群聊");
+    dialog->setWindowTitle("创建 NEXTALK 群聊");
     dialog->setMinimumWidth(410);
     auto* v = new QVBoxLayout(dialog);
     v->setContentsMargins(25, 22, 25, 22);
@@ -327,7 +327,7 @@ void MainWindow::showAccountDialog() {
     auto* dialog = new QDialog(this);
     dialog->setObjectName("accountManagement");
     dialog->setAttribute(Qt::WA_DeleteOnClose);
-    dialog->setWindowTitle("CipherChat · 我的账号");
+    dialog->setWindowTitle("NEXTALK · 我的账号");
     dialog->setMinimumWidth(460);
     auto* v = new QVBoxLayout(dialog);
     v->setContentsMargins(28, 24, 28, 24);

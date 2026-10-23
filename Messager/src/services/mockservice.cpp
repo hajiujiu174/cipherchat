@@ -64,6 +64,7 @@ QString MockService::send(const QString& conversationId, const QString& text, bo
         if (c.id == conversationId) {
             c.preview = "我：" + text.simplified();
             c.time = time;
+            c.lastActivity = QDateTime::currentMSecsSinceEpoch();
         }
     emit messagesChanged(conversationId);
     emit conversationsChanged();
@@ -104,6 +105,7 @@ void MockService::simulateIncoming(const QString& id) {
                           QTime::currentTime().toString("HH:mm"), false, false, SendState::Stored});
     for (auto& entry : m_conversations)
         if (entry.id == id) {
+            entry.lastActivity = QDateTime::currentMSecsSinceEpoch();
             entry.preview = text;
             entry.time = QTime::currentTime().toString("HH:mm");
             ++entry.unread;

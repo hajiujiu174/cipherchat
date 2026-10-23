@@ -1,10 +1,12 @@
 #include "services/mockservice.h"
 #include "services/gomokucontroller.h"
 #include "services/gomokuwire.h"
+#include "../third_party/connectfour/rules.h"
+#include "../third_party/reversi/rules.h"
+#include "ui/gomokupage.h"
 #include "ui/mainwindow.h"
 #include "ui/miniappspage.h"
 #include <QComboBox>
-#include <QDesktopServices>
 #include <QDir>
 #include <QLabel>
 #include <QLineEdit>
@@ -14,8 +16,8 @@
 #include <QSettings>
 #include <QStackedWidget>
 #include <QTemporaryDir>
-#include <QUrl>
 #include <QtTest>
+#include <algorithm>
 using namespace Messager;
 class AccountService final : public ChatService {
   public:
@@ -60,15 +62,11 @@ class MiniAppsTest : public QObject {
     Q_OBJECT
     QTemporaryDir settings;
     QString evidence;
-    QList<QUrl> openedUrls;
     void capture(QWidget& widget, const QString& name) {
         QTest::qWait(80);
         QVERIFY(widget.grab().save(evidence + "/" + name + ".png"));
     }
   private slots:
-    void recordWebUrl(const QUrl& url) {
-        openedUrls.append(url);
-    }
     void initTestCase() {
         QCoreApplication::setOrganizationName("MessagerMiniAppsTests");
         QCoreApplication::setApplicationName("MiniApps");
@@ -159,6 +157,66 @@ class MiniAppsTest : public QObject {
         QCOMPARE(GomokuWire::decode(GomokuWire::encode(object))["black"].toString(),QString("alice"));
         QVERIFY(!GomokuWire::isControl(GomokuWire::encode(object)));
         auto control=object;control["type"]="move";QVERIFY(GomokuWire::isControl(GomokuWire::encode(control)));
+    }
+    void connectFourRulesAndGravity() {
+        for(auto direction:QVector<QPoint>{{1,0},{0,1},{1,1},{1,-1}}) {
+            ConnectFourRules::Board board{};
+            for(int i=0;i<4;++i)board[(direction.y()<0?5-i:i*direction.y())*7+i*direction.x()]=2;
+            QVERIFY(ConnectFourRules::won(board,0,direction.y()<0?5:0));
+        }
+        GomokuRoom r;r.game="connectfour";QJsonArray moves;
+        const QVector<QPoint> sequence{{0,5},{1,5},{0,4},{1,4},{0,3},{1,3},{0,2}};
+        for(const auto& p:sequence)moves.append(QJsonArray{p.x(),p.y()});
+        QVERIFY(GomokuController::replay(r,moves));QCOMPARE(r.winner,1);
+        moves.append(QJsonArray{2,5});QVERIFY(!GomokuController::replay(r,moves));
+        for(const auto& invalid:QList<QJsonArray>{QJsonArray{QJsonArray{0,0}},QJsonArray{QJsonArray{7,5}},QJsonArray{QJsonArray{1.5,5}}}) {
+            GomokuRoom bad;bad.game="connectfour";QVERIFY(!GomokuController::replay(bad,invalid));
+        }
+        GomokuRoom full;full.game="connectfour";QJsonArray column;
+        for(int y=5;y>=0;--y)column.append(QJsonArray{0,y});
+        QVERIFY(GomokuController::replay(full,column));QCOMPARE(ConnectFourRules::dropRow(full.board,0),-1);
+        QVERIFY(!GomokuController::legalMoves(full).contains(QPoint(0,0)));
+    }
+    void reversiFlipsPassAndFinish() {
+        GomokuRoom initial;initial.game="reversi";QVERIFY(GomokuController::replay(initial,{}));
+        QCOMPARE(GomokuController::legalMoves(initial).size(),4);
+        QVERIFY(GomokuController::legalMoves(initial).contains(QPoint(3,2)));
+        QVERIFY(!GomokuController::replay(initial,QJsonArray{QJsonArray{0,0}}));
+        GomokuRoom one;one.game="reversi";
+        QVERIFY(GomokuController::replay(one,QJsonArray{QJsonArray{3,2}}));
+        QCOMPARE(std::count(one.board.begin(),one.board.end(),1),4);QCOMPARE(one.turn,2);
+        ReversiRules::Board multi{};multi[3*8+1]=multi[1*8+3]=1;multi[3*8+2]=multi[2*8+3]=2;
+        QVERIFY(ReversiRules::play(multi,3,3,1));QCOMPARE(multi[3*8+2],1);QCOMPARE(multi[2*8+3],1);
+        bool sawPass=false;
+        for(int seed=0;seed<4;++seed) {
+            GomokuRoom r;r.game="reversi";QVERIFY(GomokuController::replay(r,{}));QJsonArray moves;
+            while(!r.winner) {
+                const auto legal=GomokuController::legalMoves(r);QVERIFY(!legal.isEmpty());
+                const auto p=legal[(seed*7)%legal.size()];const int previous=r.turn;
+                moves.append(QJsonArray{p.x(),p.y()});QVERIFY(GomokuController::replay(r,moves));
+                if(!r.winner && r.turn==previous)sawPass=true;
+                QVERIFY(moves.size()<=60);
+            }
+            QVERIFY(!ReversiRules::hasMove(r.board,1));QVERIFY(!ReversiRules::hasMove(r.board,2));
+            const auto black=std::count(r.board.begin(),r.board.begin()+64,1),white=std::count(r.board.begin(),r.board.begin()+64,2);
+            QCOMPARE(r.winner,black==white?3:black>white?1:2);
+            moves.append(QJsonArray{0,0});QVERIFY(!GomokuController::replay(r,moves));
+        }
+        QVERIFY(sawPass);
+    }
+    void gameWireAndCatalogIsolation() {
+        AccountService service;MiniAppsPage page(&service);page.resize(980,800);page.show();
+        for(const auto& id:QStringList{"connectfour","reversi"}) {
+            QJsonObject object{{"type","invite"},{"game",id},{"room",QString(32,'b')},{"black","alice"},{"white","bob"}};
+            const auto encoded=GomokuWire::encode(object);
+            QVERIFY(encoded.contains(GomokuWire::gameMarker()));QVERIFY(!encoded.contains(GomokuWire::marker()));
+            QCOMPARE(GomokuWire::gameId(GomokuWire::decode(encoded)),id);
+            object["type"]="move";QVERIFY(GomokuWire::isControl(GomokuWire::encode(object)));
+            QVERIFY(GomokuWire::decode(GomokuWire::marker()+QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact))).isEmpty());
+            page.openApp(id);auto* game=page.findChild<GomokuPage*>(id+"Page");QVERIFY(game);QVERIFY(game->isVisible());
+            QCOMPARE(game->controller()->gameId(),id);
+            capture(page,id+"-light");Theme::instance().setMode(Theme::Dark);capture(page,id+"-dark");Theme::instance().setMode(Theme::Light);
+        }
     }
     void scientificFunctions_data() {
         QTest::addColumn<QString>("expression");
@@ -268,38 +326,37 @@ class MiniAppsTest : public QObject {
         capture(window, "scientific-pencil");
         Theme::instance().setSkin(Theme::DefaultSkin);
     }
-    void webApplicationEntry() {
+    void gamesEntryAndBackNavigation() {
         AccountService service;
-        openedUrls.clear();
-        QDesktopServices::setUrlHandler("https", this, "recordWebUrl");
         {
-            MiniAppsPage page(&service);
-            page.resize(1100, 760);
-            page.show();
-            page.openApp("web");
-            auto* address = page.findChild<QLineEdit*>("miniAppWebAddress");
-            auto* open = page.findChild<QPushButton*>("miniAppWebOpen");
-            for (const auto& invalid :
-                 QStringList{"javascript:alert(1)", "file:///C:/Windows", "https://", "http://example.com",
-                             "https://user:password@example.com"}) {
-                address->setText(invalid);
-                open->click();
-                QVERIFY(page.findChild<QLabel*>("miniAppWebStatus")->text().startsWith("请输入"));
+            MiniAppsPage page(&service);page.resize(1100,800);page.show();
+            QVERIFY(!page.findChild<QPushButton*>("miniAppOpen_web"));
+            QVERIFY(!page.findChild<QLineEdit*>("miniAppWebAddress"));
+            auto* entry=page.findChild<QPushButton*>("miniAppOpen_games");QVERIFY(entry&&entry->isVisible());
+            for(const auto& id:QStringList{"gomoku","connectfour","reversi","tanktrouble"})
+                QVERIFY(!page.findChild<QPushButton*>("miniAppOpen_"+id)->isVisible());
+            QTest::mouseClick(entry,Qt::LeftButton);
+            for(const auto& id:QStringList{"gomoku","connectfour","reversi","tanktrouble"}) {
+                auto* open=page.findChild<QPushButton*>("miniAppOpen_"+id);QVERIFY(open&&open->isVisible());
+                QTest::mouseClick(open,Qt::LeftButton);
+                auto* game=page.findChild<QWidget*>(id+"Page");QVERIFY(game&&game->isVisible());
+                auto* back=page.findChild<QPushButton*>("miniGameBack_"+id);QVERIFY(back&&back->text()=="返回小游戏");
+                QTest::mouseClick(back,Qt::LeftButton);QVERIFY(open->isVisible());
             }
-            QCOMPARE(openedUrls.size(), 0);
-            address->setText("https://example.com/app");
-            open->click();
-            QCOMPARE(openedUrls, QList<QUrl>{QUrl("https://example.com/app")});
-            capture(page, "web-entry");
-            service.switchUser("bob");
-            QVERIFY(address->text().isEmpty());
-            service.switchUser("alice");
-            QCOMPARE(address->text(), QString("https://example.com/app"));
+            auto* favorite=page.findChild<QPushButton*>("miniAppFavorite_gomoku");
+            if(!favorite->isChecked())QTest::mouseClick(favorite,Qt::LeftButton);
+            Theme::instance().setMode(Theme::Light);capture(page,"games-entry-light");
+            Theme::instance().setMode(Theme::Dark);capture(page,"games-entry-dark");
+            page.resize(800,600);capture(page,"games-entry-minimum");Theme::instance().setMode(Theme::Light);
+            QTest::mouseClick(page.findChild<QPushButton*>("miniAppBack_4"),Qt::LeftButton);
+            QVERIFY(entry->isVisible());QVERIFY(!page.findChild<QPushButton*>("miniAppOpen_gomoku")->isVisible());
+            page.openApp("web");QVERIFY(entry->isVisible());
+            page.findChild<QComboBox*>("miniAppFilter")->setCurrentIndex(1);QVERIFY(entry->isVisible());
         }
-        QDesktopServices::unsetUrlHandler("https");
-        MiniAppsPage restored(&service);
-        QCOMPARE(restored.findChild<QLineEdit*>("miniAppWebAddress")->text(),
-                 QString("https://example.com/app"));
+        MiniAppsPage restored(&service);restored.show();
+        restored.findChild<QComboBox*>("miniAppFilter")->setCurrentIndex(1);
+        QVERIFY(restored.findChild<QPushButton*>("miniAppOpen_games")->isVisible());
+        restored.openApp("games");QVERIFY(restored.findChild<QPushButton*>("miniAppFavorite_gomoku")->isChecked());
     }
     void navigationSearchAndAppearance() {
         MockService service;

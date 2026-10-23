@@ -3,13 +3,17 @@
 #include "rhine_json.hpp"
 #include <QJsonDocument>
 #include <QTimer>
+#include <QElapsedTimer>
 namespace Messager {
 struct CipherChatGateway::Impl {
     ccfw::gui::BusinessWorker worker;
     QTimer timer;
+    QElapsedTimer clock;
+    qint64 fastUntil=0;
 };
 CipherChatGateway::CipherChatGateway(QObject* parent) : QObject(parent), m_impl(std::make_unique<Impl>()) {
     m_impl->timer.setInterval(30);
+    m_impl->timer.setTimerType(Qt::PreciseTimer);m_impl->clock.start();
     connect(&m_impl->timer, &QTimer::timeout, this, [this] {
         for (const auto& event : m_impl->worker.drain()) {
             // The shared serializer handles ClientEvent and RestoredView. CommandResult
@@ -29,6 +33,8 @@ CipherChatGateway::CipherChatGateway(QObject* parent) : QObject(parent), m_impl(
             }
             emit eventReceived(result);
         }
+        const int interval=m_impl->clock.elapsed()<m_impl->fastUntil?5:30;
+        if(m_impl->timer.interval()!=interval)m_impl->timer.setInterval(interval);
     });
     m_impl->timer.start();
 }
@@ -48,6 +54,10 @@ bool CipherChatGateway::validateCommand(const QJsonObject& request) const {
 }
 bool CipherChatGateway::post(const QJsonObject& request, const QString& requestId) {
     try {
+        if(request["command"]=="gameRelay") {
+            m_impl->fastUntil=m_impl->clock.elapsed()+3000;
+            if(m_impl->timer.interval()!=5)m_impl->timer.setInterval(5);
+        }
         const auto data = QJsonDocument(request).toJson(QJsonDocument::Compact);
         auto command = ccfw::gui::rhine::commandFromJson(nlohmann::json::parse(data.constData()));
         if (auto* text = std::get_if<ccfw::SendText>(&command))
@@ -58,7 +68,7 @@ bool CipherChatGateway::post(const QJsonObject& request, const QString& requestI
     } catch (...) {
         emit commandRejected(request.value("command").toString() == "authenticate"
                                  ? "登录信息或连接配置格式有误，请检查连接设置"
-                                 : "操作信息格式有误，未能提交给 CipherChat");
+                                 : "操作信息格式有误，未能提交给 NEXTALK");
     }
     return false;
 }
