@@ -1,0 +1,105 @@
+#include "gameudp.h"
+#include <QJsonDocument>
+#include <QNetworkDatagram>
+#include <QtEndian>
+#include <QHostInfo>
+#include <QMessageAuthenticationCode>
+#include <QDateTime>
+namespace Messager {
+// 构造游戏 UDP 中转客户端，初始化后续操作需要的状态或依赖。
+GameUdp::GameUdp(QObject* parent):QObject(parent){
+    m_clock.start();m_timer.setInterval(250);
+    connect(&m_timer,&QTimer::timeout,this,&GameUdp::heartbeat);
+    connect(&m_socket,&QUdpSocket::readyRead,this,&GameUdp::read);
+}
+// 停止游戏 UDP 中转客户端。
+void GameUdp::stop(){m_timer.stop();m_socket.close();m_user.clear();m_peers.clear();m_bound=-10000;m_key.clear();++m_generation;}
+// 验证短期票据，解析中转地址并绑定本机 UDP 套接字。
+void GameUdp::start(const QString& host,quint16 port,const QString& user,const QJsonObject& ticket){
+    stop();m_sent=m_received=m_fallback=0;m_tx=m_rx=0;
+    const auto key=QByteArray::fromBase64(ticket["key"].toString().toLatin1());
+    const auto expires=ticket["expires"].toInteger();const auto session=ticket["session"].toString();
+    if(!port||user.isEmpty()||key.size()!=32||expires<=QDateTime::currentSecsSinceEpoch()||session.isEmpty())return;
+    const auto generation=m_generation;
+    // 返回游戏联机使用的已解析。
+    auto resolved=[this,generation,user,key,session,expires,port](const QHostAddress& address){
+        if(generation!=m_generation||address.isNull())return;m_host=address;
+        if(!m_socket.bind(m_host.protocol()==QAbstractSocket::IPv6Protocol?QHostAddress::AnyIPv6:QHostAddress::AnyIPv4,quint16(0)))return;
+        m_key=key;m_expiry=expires;m_session=session;m_user=user;m_port=port;m_timer.start();heartbeat();
+    };
+    QHostAddress address;if(address.setAddress(host))resolved(address);
+    else QHostInfo::lookupHost(host,this,[resolved](const QHostInfo& info){for(const auto& address:info.addresses())if(address.protocol()==QAbstractSocket::IPv4Protocol){resolved(address);return;}if(!info.addresses().isEmpty())resolved(info.addresses().first());});
+}
+// 为 UDP 数据报附加会话、有效期、序号和签名，然后发给配置的中转。
+bool GameUdp::write(QJsonObject data){
+    if(!capable())return false;
+    if(QDateTime::currentSecsSinceEpoch()>=m_expiry)return false;
+    data["v"]=2;data["from"]=m_user;data["session"]=m_session;data["expires"]=m_expiry;data["nonce"]=QString::number(++m_tx);
+    const auto canonical=QJsonDocument(data).toJson(QJsonDocument::Compact);data["mac"]=QString::fromLatin1(QMessageAuthenticationCode::hash(canonical,m_key,QCryptographicHash::Sha256).toHex());
+    const auto bytes=QJsonDocument(data).toJson(QJsonDocument::Compact);
+    return bytes.size()<=1200&&m_socket.writeDatagram(bytes,m_host,m_port)==bytes.size();
+}
+// 登记游戏 UDP 中转客户端。
+void GameUdp::advertise(const QString& peer,bool enabled){
+    if(peer.isEmpty())return;
+    if(!enabled){m_peers.remove(peer);return;}
+    if(!m_peers.contains(peer)&&m_peers.size()>=32)m_peers.erase(m_peers.begin());
+    m_peers[peer].active=m_clock.elapsed();
+    write({{"op","probe"},{"to",peer}});
+}
+// 维持在中转上的绑定，并探测当前游戏对端是否可走 UDP。
+void GameUdp::heartbeat(){
+    write({{"op","bind"}});
+    const auto now=m_clock.elapsed();
+    for(auto it=m_peers.begin();it!=m_peers.end();){
+        if(now-it->active>10000){it=m_peers.erase(it);continue;}
+        write({{"op","probe"},{"to",it.key()}});++it;
+    }
+}
+// 判断本机绑定与指定对端的探测是否仍在有效时间内。
+bool GameUdp::ready(const QString& peer)const{
+    const auto now=m_clock.elapsed();
+    return capable()&&now-m_bound<1000&&m_peers.contains(peer)&&now-m_peers[peer].pong<900;
+}
+// 仅在对端探测通过时发送压缩后的游戏状态包，否则允许调用方回退。
+bool GameUdp::send(const QString& peer,const QJsonObject& data){
+    if(m_peers.contains(peer))m_peers[peer].active=m_clock.elapsed();
+    if(!ready(peer)){++m_fallback;return false;}
+    const auto bytes=QJsonDocument(data).toJson(QJsonDocument::Compact);
+    if(bytes.size()>32768){++m_fallback;return false;}
+    const bool sent=write({{"op","data"},{"to",peer},{"blob",QString::fromLatin1(qCompress(bytes,1).toBase64())}});
+    if(sent)++m_sent;else ++m_fallback;
+    return sent;
+}
+// 检查 UDP 来源、会话和签名，处理探测或把有效的实时游戏包交给控制器。
+void GameUdp::read(){
+    // Bound work per event so malformed floods cannot monopolize the GUI loop.
+    for(int budget=0;budget<128&&m_socket.hasPendingDatagrams();++budget){
+        const auto d=m_socket.receiveDatagram(1201);
+        if(d.senderAddress()!=m_host||d.senderPort()!=m_port||d.data().size()>1200)continue;
+        auto o=QJsonDocument::fromJson(d.data()).object();
+        if(o["v"].toInt()!=2||o["session"]!=m_session||o["expires"].toInteger()!=m_expiry||QDateTime::currentSecsSinceEpoch()>=m_expiry)continue;
+        const auto signature=o.take("mac").toString().toLatin1();const auto nonce=o["nonce"].toString().toULongLong();
+        if(nonce<=m_rx||signature!=QMessageAuthenticationCode::hash(QJsonDocument(o).toJson(QJsonDocument::Compact),m_key,QCryptographicHash::Sha256).toHex())continue;
+        m_rx=nonce;
+        const auto op=o["op"].toString(),peer=o["from"].toString();
+        if(op=="bound"){m_bound=m_clock.elapsed();continue;}
+        if(!m_peers.contains(peer))continue;
+        if(op=="probe"){write({{"op","pong"},{"to",peer}});continue;}
+        if(op=="pong"){m_peers[peer].pong=m_clock.elapsed();continue;}
+        if(op!="data")continue;
+        const auto bytes=QByteArray::fromBase64(o["blob"].toString().toLatin1());
+        if(bytes.size()<5)continue;
+        const auto size=qFromBigEndian<quint32>(reinterpret_cast<const uchar*>(bytes.constData()));
+        if(size>32768)continue;
+        const auto decoded=qUncompress(bytes);if(decoded.size()!=size)continue;
+        const auto data=QJsonDocument::fromJson(decoded).object();
+        const auto game=data["game"].toString(),type=data["type"].toString();
+        if((game!="tanktrouble"&&game!="badminton")||(type!="state"&&type!="input")||data["net"].toInt()!=2)continue;
+        ++m_received;emit packet(peer,data);
+    }
+    if(m_socket.hasPendingDatagrams())QTimer::singleShot(0,this,&GameUdp::read);
+}
+// 返回游戏 UDP 中转客户端使用的统计信息。
+QJsonObject GameUdp::stats()const{return {{"sent",m_sent},{"received",m_received},{"tls_fallback",m_fallback}};}
+}

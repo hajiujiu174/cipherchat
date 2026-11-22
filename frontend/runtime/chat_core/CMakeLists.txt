@@ -1,0 +1,35 @@
+cmake_minimum_required(VERSION 3.24)
+
+if(CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    project(NEXTALKChatCore LANGUAGES CXX)
+    include(CTest)
+endif()
+
+find_package(SQLite3 REQUIRED)
+if(NOT TARGET SQLite3::SQLite3)
+    add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
+endif()
+
+add_library(nextalk_chat_core STATIC message_flow.cpp binary.cpp sqlite_core.cpp relay_store.cpp file_cache_store.cpp directory_store.cpp group_flow.cpp message_records.cpp file_flow.cpp relay_flow.cpp snapshot_store.cpp delivery_flow.cpp)
+target_link_libraries(nextalk_chat_core PUBLIC SQLite3::SQLite3)
+target_include_directories(nextalk_chat_core PUBLIC .)
+set_target_properties(nextalk_chat_core PROPERTIES
+    CXX_STANDARD 98 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO AUTOMOC OFF)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT MSVC)
+    target_compile_options(nextalk_chat_core PRIVATE -Wall -Wextra -pedantic-errors)
+endif()
+
+if(BUILD_TESTING AND CMAKE_CURRENT_SOURCE_DIR STREQUAL CMAKE_SOURCE_DIR)
+    add_executable(nextalk_chat_core_tests test_message_flow.cpp)
+    add_executable(nextalk_reliable_delivery_tests test_reliable_delivery.cpp)
+    foreach(test nextalk_chat_core_tests nextalk_reliable_delivery_tests)
+        target_link_libraries(${test} PRIVATE nextalk_chat_core)
+        set_target_properties(${test} PROPERTIES
+            CXX_STANDARD 98 CXX_STANDARD_REQUIRED YES CXX_EXTENSIONS NO)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" AND NOT MSVC)
+            target_compile_options(${test} PRIVATE -Wall -Wextra -pedantic-errors)
+        endif()
+    endforeach()
+    add_test(NAME chat-core-cpp98 COMMAND nextalk_chat_core_tests)
+    add_test(NAME reliable-delivery-cpp98 COMMAND nextalk_reliable_delivery_tests)
+endif()

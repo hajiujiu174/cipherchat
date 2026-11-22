@@ -1,0 +1,30 @@
+{
+  "origin": "immutable pre-M10 source-baseline.zip",
+  "shared_original_assets": "qrc meshes, audio, shaders; unchanged qmldir and BootMotion.mjs",
+  "files": {
+    "ArrayMaterial.qml": "bcf61916ff3c2163e869a25612655a53e50cf5cfc998c1e6299786ec76398c71",
+    "Boot.qml": "945700323b032eecaa58fe5ed6062c1c77cfa1131cdefd5d0b7e38ca4051756b",
+    "Cassette.qml": "76ef36c72075eb97a5c6d1c0fe09b8a69cfadf9173b6987dc767fda3fca129bd",
+    "ChatPanel.qml": "dec11a14e29c8ef48f55c725958d0587a33e622939dce76b4a60ce9bed357f8c",
+    "ChatStore.qml": "6e4a2db24a2c470c9019da4dc8cabe40b9bc8519e753bcee738f11a030e8abd6",
+    "DetailContent.qml": "cd15f2af56ba59a582fe8eeaf78902c531c7884bc997eb773aba4cddae006133",
+    "Glyph.qml": "f6548075787ba6ea3bd7c420c188e6add79274bd9021075ff3354aa0fa0197ed",
+    "InspectionOverlay.qml": "519b6124242d88edea978a3994a036ece720646308eac27700ccb43ba7e0c293",
+    "KeyCap.qml": "a81b6e7a8e5fd8801cdba97761a2403c2e1523bcb81ef102f571cc0bbcf467f8",
+    "Logo.qml": "0d3557b149f34c328a72f9c8a38b566983c04755495fb83971ac2b2859dd9cd5",
+    "Main.qml": "fddba5f727d992c8db11ae4ed1ecf4a8b6ca85f1dfbfaa5174578fa7ad1470b5",
+    "RButton.qml": "03b8a568dedec8ee06a3587b1f7ac6ccd21d2d375471e440d9dbe79f19cd3834",
+    "Records.js": "11f5129f046ded2a1e8b7765af9bd28681079886bbbfe648f2f27b9783b1fd30",
+    "RField.qml": "3e9f9e5e432d1b65a7fe7dc4790fa881365b33fbf4f72ebc0a4e9b38f20927e6",
+    "Rolling.qml": "d37c9eeed30d3b375f4cccc8862be1ac9457541b444f462368793ca2e4f15bcf",
+    "Scene.qml": "2dbbe57746d0a2d537705414c84bc68014c58bf0f6b96af71ddeb218d416c817",
+    "ShellMaterial.qml": "830d1f175721203d76e13ded82fa81e65fbfad1116338408d7862ce1f38c9bc5",
+    "TerminalAudio.qml": "c7c0935dffed0ef518440cb0ddcd43f7c7da40dabfd3bd631f29efa6e1db418c",
+    "TerminalModal.qml": "db05b410291cd45f44e3680db074b58a58b2b521d11728fb7e6369f92a08c567",
+    "Theme.qml": "12d2eda316aca82796cbc54566c71a6671dad0ace06f323dfa7e7ab2d555daf6",
+    "qmldir": "8a9e1301a00c98c76b795513d7ea8f550f6c16b5c3ab662b40e158412009f546",
+    "BootMotion.mjs": "b342c7d25f260eaa47f876e9b7f52dd65ea4ebf87763a8ca3e3d3be05de38888"
+  },
+  "brandingMaintenance": "NEXTALK rename; fixture hashes updated; prior source backup removed at user request on 2026-11-14",
+  "originalArchiveStatus": "Removed from workspace at user request; current compatibility fixtures remain active test dependencies"
+}

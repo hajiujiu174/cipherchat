@@ -1,8 +1,9 @@
-build/
+/build/
+/.local/
+/runtime/
 **/build/
 **/work/
 **/artifacts/
-**/runtime*/
 **/evidence/
 **/screenshots/
 **/.serena/
